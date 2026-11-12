@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#080A0D">
   <title>ONE TAP TRADE</title>
   <link rel="stylesheet" href="/style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -14,9 +14,8 @@
     <header class="top">
       <div class="telegram-brand">
         <span>TELEGRAM</span>
-        <span class="check" aria-label="Telegram connection indicator">✓</span>
+        <span class="check">✓</span>
       </div>
-
       <div class="app-name">ONE TAP TRADE</div>
 
       <div class="language-switch">
@@ -24,40 +23,31 @@
         <button type="button" id="langEN">EN</button>
       </div>
 
-      <p class="sub" data-i18n="subtitle">Предпросмотр NFT</p>
+      <p class="sub" data-i18n="subtitle">Обмен цифровыми коллекционными предметами</p>
     </header>
 
     <section class="panel intro">
-      <div class="eyebrow" data-i18n="stage">ЭТАП 01</div>
-      <h1 data-i18n="heading">Подготовьте изображения NFT</h1>
-      <p data-i18n="description">
-        Добавьте ссылку на коллекционный предмет Telegram и его изображение.
-        Сейчас доступен только предварительный просмотр.
-      </p>
+      <div class="eyebrow">STAGE 01</div>
+      <h1 data-i18n="heading">Создание обмена</h1>
+      <p data-i18n="description">Укажи участников и добавь ссылки на два NFT для предварительного просмотра.</p>
     </section>
 
     <section class="cards">
       <article class="nft-card">
         <div class="card-head">
           <span class="number">01</span>
-          <span class="tag" data-i18n="yourNft">ВАШ NFT</span>
+          <span class="tag" data-i18n="yourNft">ТВОЙ NFT</span>
         </div>
 
-        <div class="preview" id="preview1">
-          <div class="placeholder" data-i18n="nftImage">ИЗОБРАЖЕНИЕ NFT</div>
-        </div>
+        <label for="username1" data-i18n="yourUsername">Твой Telegram username</label>
+        <input id="username1" type="text" placeholder="@your_username">
 
-        <label for="link1" data-i18n="nftLink">Ссылка на NFT в Telegram</label>
+        <label for="link1" data-i18n="yourLink">Ссылка на твой NFT</label>
         <input id="link1" type="url" placeholder="https://t.me/nft/BDayCandle-202879">
 
-        <label for="image1" data-i18n="imageUrl">Ссылка на изображение (необязательно)</label>
-        <input id="image1" type="url" placeholder="https://example.com/nft.jpg">
-
-        <label class="upload">
-          <span data-i18n="chooseImage">Или выберите изображение</span>
-          <input id="file1" type="file" accept="image/*">
-        </label>
-
+        <div class="preview" id="preview1">
+          <div class="placeholder" data-i18n="preview">ПРЕДПРОСМОТР NFT</div>
+        </div>
         <div class="status" id="status1"></div>
       </article>
 
@@ -67,80 +57,69 @@
           <span class="tag" data-i18n="partnerNft">NFT ПАРТНЁРА</span>
         </div>
 
-        <div class="preview" id="preview2">
-          <div class="placeholder" data-i18n="nftImage">ИЗОБРАЖЕНИЕ NFT</div>
-        </div>
+        <label for="username2" data-i18n="partnerUsername">Telegram username партнёра</label>
+        <input id="username2" type="text" placeholder="@partner_username">
 
-        <label for="link2" data-i18n="nftLink">Ссылка на NFT в Telegram</label>
+        <label for="link2" data-i18n="partnerLink">Ссылка на NFT партнёра</label>
         <input id="link2" type="url" placeholder="https://t.me/nft/ViceCream-313219">
 
-        <label for="image2" data-i18n="imageUrl">Ссылка на изображение (необязательно)</label>
-        <input id="image2" type="url" placeholder="https://example.com/nft.jpg">
-
-        <label class="upload">
-          <span data-i18n="chooseImage">Или выберите изображение</span>
-          <input id="file2" type="file" accept="image/*">
-        </label>
-
+        <div class="preview" id="preview2">
+          <div class="placeholder" data-i18n="preview">ПРЕДПРОСМОТР NFT</div>
+        </div>
         <div class="status" id="status2"></div>
       </article>
     </section>
 
-    <button id="checkBtn" class="primary" data-i18n="check">
-      ПРОВЕРИТЬ ССЫЛКИ NFT
+    <button id="checkBtn" class="primary" type="button" data-i18n="load">
+      ЗАГРУЗИТЬ NFT
     </button>
 
     <p id="globalStatus" class="global-status" role="status"></p>
 
     <footer data-i18n="footer">
-      Предварительная версия · Без переводов и платежей
+      ONE TAP TRADE · NFT PREVIEW
     </footer>
   </main>
-
-  <script src="/app.js"></script>
 
   <script>
     const translations = {
       ru: {
-        subtitle: "Предпросмотр NFT",
-        stage: "ЭТАП 01",
-        heading: "Подготовьте изображения NFT",
-        description: "Добавьте ссылку на коллекционный предмет Telegram и его изображение. Сейчас доступен только предварительный просмотр.",
-        yourNft: "ВАШ NFT",
+        subtitle: "Обмен цифровыми коллекционными предметами",
+        heading: "Создание обмена",
+        description: "Укажи участников и добавь ссылки на два NFT для предварительного просмотра.",
+        yourNft: "ТВОЙ NFT",
         partnerNft: "NFT ПАРТНЁРА",
-        nftImage: "ИЗОБРАЖЕНИЕ NFT",
-        nftLink: "Ссылка на NFT в Telegram",
-        imageUrl: "Ссылка на изображение (необязательно)",
-        chooseImage: "Или выберите изображение",
-        check: "ПРОВЕРИТЬ ССЫЛКИ NFT",
-        footer: "Предварительная версия · Без переводов и платежей"
+        yourUsername: "Твой Telegram username",
+        partnerUsername: "Telegram username партнёра",
+        yourLink: "Ссылка на твой NFT",
+        partnerLink: "Ссылка на NFT партнёра",
+        preview: "ПРЕДПРОСМОТР NFT",
+        load: "ЗАГРУЗИТЬ NFT",
+        footer: "ONE TAP TRADE · ПРЕДПРОСМОТР NFT"
       },
       en: {
-        subtitle: "NFT Preview",
-        stage: "STAGE 01",
-        heading: "Prepare your NFT previews",
-        description: "Add a Telegram collectible link and its image. This version supports previews only.",
+        subtitle: "Digital collectible exchange",
+        heading: "Create an exchange",
+        description: "Enter both participants and add two NFT links to preview.",
         yourNft: "YOUR NFT",
-        partnerNft: "PARTNER NFT",
-        nftImage: "NFT IMAGE",
-        nftLink: "Telegram NFT link",
-        imageUrl: "Image URL (optional)",
-        chooseImage: "Or choose an image file",
-        check: "CHECK NFT LINKS",
-        footer: "Preview prototype · No transfers or payments"
+        partnerNft: "PARTNER'S NFT",
+        yourUsername: "Your Telegram username",
+        partnerUsername: "Partner's Telegram username",
+        yourLink: "Your NFT link",
+        partnerLink: "Partner's NFT link",
+        preview: "NFT PREVIEW",
+        load: "LOAD NFTS",
+        footer: "ONE TAP TRADE · NFT PREVIEW"
       }
     };
 
     function setLanguage(lang) {
       const selected = translations[lang] ? lang : "ru";
-
       document.documentElement.lang = selected;
 
       document.querySelectorAll("[data-i18n]").forEach(element => {
         const key = element.dataset.i18n;
-        if (translations[selected][key]) {
-          element.textContent = translations[selected][key];
-        }
+        element.textContent = translations[selected][key];
       });
 
       document.getElementById("langRU").classList.toggle("active", selected === "ru");
@@ -153,6 +132,14 @@
     document.getElementById("langEN").addEventListener("click", () => setLanguage("en"));
 
     setLanguage(localStorage.getItem("ott-language") || "ru");
+  </script>
+
+  <script src="/app.js"></script>
+  <script>
+    if (window.Telegram?.WebApp) {
+      window.Telegram.WebApp.ready();
+      window.Telegram.WebApp.expand();
+    }
   </script>
 </body>
 </html>

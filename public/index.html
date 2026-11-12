@@ -1,145 +1,194 @@
-
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#080A0D">
-  <title>ONE TAP TRADE</title>
-  <link rel="stylesheet" href="/style.css">
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<title>One Tap Trade</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#0b0d12;--bg2:#11141b;--card:#161a23;--card2:#1b2030;
+  --line:#262c3b;--text:#eef1f7;--muted:#8d95a8;
+  --accent:#2a9df4;--accent2:#1c7fd1;--danger:#ff5d6c;--ok:#35d07f;
+  --r:18px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:radial-gradient(1200px 600px at 50% -10%,#16203a 0%,var(--bg) 60%) no-repeat,var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Inter","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  min-height:100vh;
+  padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom));
+  -webkit-font-smoothing:antialiased;
+}
+.app{max-width:520px;margin:0 auto;animation:fadeUp .5s ease both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* Header */
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}
+.brand{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tg-line{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:.18em;color:var(--muted)}
+.tg-check{width:16px;height:16px;flex:none}
+.title{font-size:22px;font-weight:800;letter-spacing:.06em;margin:0;white-space:nowrap}
+.lang{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;flex:none}
+.lang button{
+  border:0;background:transparent;color:var(--muted);font:600 12px inherit;font-family:inherit;
+  padding:7px 12px;border-radius:999px;cursor:pointer;letter-spacing:.06em;transition:.2s
+}
+.lang button.active{background:var(--accent);color:#fff;box-shadow:0 4px 14px rgba(42,157,244,.35)}
+
+/* Cards */
+.card{
+  background:linear-gradient(180deg,var(--card) 0%,var(--bg2) 100%);
+  border:1px solid var(--line);border-radius:var(--r);
+  padding:16px;margin-bottom:14px;transition:border-color .2s,transform .2s;
+}
+.card:focus-within{border-color:#34507a}
+.card h2{margin:0 0 12px;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.field{margin-bottom:12px}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.field input{
+  width:100%;background:var(--card2);border:1px solid var(--line);color:var(--text);
+  border-radius:12px;padding:13px 14px;font:500 15px inherit;font-family:inherit;outline:none;
+  transition:border-color .2s,box-shadow .2s;
+}
+.field input::placeholder{color:#5b6377}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(42,157,244,.15)}
+.field.invalid input{border-color:var(--danger);box-shadow:0 0 0 3px rgba(255,93,108,.12)}
+.err{display:none;color:var(--danger);font-size:12px;margin-top:6px}
+.field.invalid .err{display:block}
+
+/* Button */
+.btn{
+  width:100%;border:0;border-radius:14px;padding:16px;margin-top:4px;
+  background:linear-gradient(180deg,var(--accent) 0%,var(--accent2) 100%);
+  color:#fff;font:800 15px inherit;font-family:inherit;letter-spacing:.1em;cursor:pointer;
+  box-shadow:0 10px 26px rgba(42,157,244,.3);transition:transform .12s,opacity .2s;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+.btn.loading .spinner{display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Status */
+.status{display:none;margin-top:14px;padding:12px 14px;border-radius:12px;font-size:13px;line-height:1.4;border:1px solid var(--line);background:var(--card)}
+.status.show{display:block;animation:fadeUp .3s ease both}
+.status.error{color:#ffb3bb;border-color:rgba(255,93,108,.4);background:rgba(255,93,108,.08)}
+.status.success{color:#9ef0c3;border-color:rgba(53,208,127,.4);background:rgba(53,208,127,.08)}
+.status.info{color:var(--muted)}
+
+/* Results */
+.results{display:none;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.results.show{display:grid;animation:fadeUp .4s ease both}
+.nft{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
+.nft-img{aspect-ratio:1/1;background:var(--card2);position:relative;display:flex;align-items:center;justify-content:center}
+.nft-img img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .4s}
+.nft-img img.ready{opacity:1}
+.skeleton{position:absolute;inset:0;background:linear-gradient(100deg,var(--card2) 30%,#242b3d 50%,var(--card2) 70%);background-size:200% 100%;animation:shimmer 1.2s linear infinite}
+@keyframes shimmer{to{background-position:-200% 0}}
+.nft-fail{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:12px;color:var(--danger);font-size:12px}
+.nft.failed .nft-fail{display:flex}
+.nft.failed .skeleton{display:none}
+.nft-meta{padding:10px 12px}
+.nft-role{font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
+.nft-name{font-size:13px;font-weight:700;margin-top:2px;word-break:break-all}
+.nft-owner{font-size:12px;color:var(--accent);margin-top:2px;word-break:break-all}
+
+.footer{text-align:center;color:#566076;font-size:11px;margin-top:22px;letter-spacing:.04em}
+</style>
 </head>
 <body>
-  <main class="shell">
-    <header class="top">
-      <div class="telegram-brand">
+<div class="app">
+
+  <header class="header">
+    <div class="brand">
+      <div class="tg-line">
         <span>TELEGRAM</span>
-        <span class="check">✓</span>
+        <svg class="tg-check" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="11" fill="#2a9df4"/>
+          <path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
       </div>
-      <div class="app-name">ONE TAP TRADE</div>
+      <h1 class="title">ONE TAP TRADE</h1>
+    </div>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" id="langRu" data-lang="ru">RU</button>
+      <button type="button" id="langEn" data-lang="en">EN</button>
+    </div>
+  </header>
 
-      <div class="language-switch">
-        <button type="button" id="langRU" class="active">RU</button>
-        <button type="button" id="langEN">EN</button>
+  <main>
+    <section class="card" id="myCard">
+      <h2 data-i18n="myNft">Мой NFT</h2>
+      <div class="field" id="myUsernameField">
+        <label for="myUsername" data-i18n="username">Telegram username владельца</label>
+        <input id="myUsername" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="@username" data-i18n-placeholder="phUsername">
+        <div class="err" id="myUsernameErr"></div>
       </div>
-
-      <p class="sub" data-i18n="subtitle">Обмен цифровыми коллекционными предметами</p>
-    </header>
-
-    <section class="panel intro">
-      <div class="eyebrow">STAGE 01</div>
-      <h1 data-i18n="heading">Создание обмена</h1>
-      <p data-i18n="description">Укажи участников и добавь ссылки на два NFT для предварительного просмотра.</p>
+      <div class="field" id="myNftLinkField">
+        <label for="myNftLink" data-i18n="nftLink">Ссылка на NFT</label>
+        <input id="myNftLink" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://t.me/nft/BDayCandle-202879">
+        <div class="err" id="myNftLinkErr"></div>
+      </div>
     </section>
 
-    <section class="cards">
-      <article class="nft-card">
-        <div class="card-head">
-          <span class="number">01</span>
-          <span class="tag" data-i18n="yourNft">ТВОЙ NFT</span>
-        </div>
-
-        <label for="username1" data-i18n="yourUsername">Твой Telegram username</label>
-        <input id="username1" type="text" placeholder="@your_username">
-
-        <label for="link1" data-i18n="yourLink">Ссылка на твой NFT</label>
-        <input id="link1" type="url" placeholder="https://t.me/nft/BDayCandle-202879">
-
-        <div class="preview" id="preview1">
-          <div class="placeholder" data-i18n="preview">ПРЕДПРОСМОТР NFT</div>
-        </div>
-        <div class="status" id="status1"></div>
-      </article>
-
-      <article class="nft-card">
-        <div class="card-head">
-          <span class="number">02</span>
-          <span class="tag" data-i18n="partnerNft">NFT ПАРТНЁРА</span>
-        </div>
-
-        <label for="username2" data-i18n="partnerUsername">Telegram username партнёра</label>
-        <input id="username2" type="text" placeholder="@partner_username">
-
-        <label for="link2" data-i18n="partnerLink">Ссылка на NFT партнёра</label>
-        <input id="link2" type="url" placeholder="https://t.me/nft/ViceCream-313219">
-
-        <div class="preview" id="preview2">
-          <div class="placeholder" data-i18n="preview">ПРЕДПРОСМОТР NFT</div>
-        </div>
-        <div class="status" id="status2"></div>
-      </article>
+    <section class="card" id="partnerCard">
+      <h2 data-i18n="partnerNft">NFT партнёра</h2>
+      <div class="field" id="partnerUsernameField">
+        <label for="partnerUsername" data-i18n="partnerUsername">Telegram username партнёра</label>
+        <input id="partnerUsername" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="@username" data-i18n-placeholder="phUsername">
+        <div class="err" id="partnerUsernameErr"></div>
+      </div>
+      <div class="field" id="partnerNftLinkField">
+        <label for="partnerNftLink" data-i18n="nftLink">Ссылка на NFT</label>
+        <input id="partnerNftLink" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://t.me/nft/ViceCream-313219">
+        <div class="err" id="partnerNftLinkErr"></div>
+      </div>
     </section>
 
-    <button id="checkBtn" class="primary" type="button" data-i18n="load">
-      ЗАГРУЗИТЬ NFT
+    <button type="button" class="btn" id="loadBtn">
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="loadBtnText" data-i18n="load">ЗАГРУЗИТЬ NFT</span>
     </button>
 
-    <p id="globalStatus" class="global-status" role="status"></p>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
 
-    <footer data-i18n="footer">
-      ONE TAP TRADE · NFT PREVIEW
-    </footer>
+    <section class="results" id="results">
+      <article class="nft" id="myNftCard">
+        <div class="nft-img">
+          <div class="skeleton"></div>
+          <img id="myNftImage" alt="">
+          <div class="nft-fail" id="myNftFail"></div>
+        </div>
+        <div class="nft-meta">
+          <div class="nft-role" data-i18n="myNft">Мой NFT</div>
+          <div class="nft-name" id="myNftName"></div>
+          <div class="nft-owner" id="myNftOwner"></div>
+        </div>
+      </article>
+      <article class="nft" id="partnerNftCard">
+        <div class="nft-img">
+          <div class="skeleton"></div>
+          <img id="partnerNftImage" alt="">
+          <div class="nft-fail" id="partnerNftFail"></div>
+        </div>
+        <div class="nft-meta">
+          <div class="nft-role" data-i18n="partnerNft">NFT партнёра</div>
+          <div class="nft-name" id="partnerNftName"></div>
+          <div class="nft-owner" id="partnerNftOwner"></div>
+        </div>
+      </article>
+    </section>
   </main>
 
-  <script>
-    const translations = {
-      ru: {
-        subtitle: "Обмен цифровыми коллекционными предметами",
-        heading: "Создание обмена",
-        description: "Укажи участников и добавь ссылки на два NFT для предварительного просмотра.",
-        yourNft: "ТВОЙ NFT",
-        partnerNft: "NFT ПАРТНЁРА",
-        yourUsername: "Твой Telegram username",
-        partnerUsername: "Telegram username партнёра",
-        yourLink: "Ссылка на твой NFT",
-        partnerLink: "Ссылка на NFT партнёра",
-        preview: "ПРЕДПРОСМОТР NFT",
-        load: "ЗАГРУЗИТЬ NFT",
-        footer: "ONE TAP TRADE · ПРЕДПРОСМОТР NFT"
-      },
-      en: {
-        subtitle: "Digital collectible exchange",
-        heading: "Create an exchange",
-        description: "Enter both participants and add two NFT links to preview.",
-        yourNft: "YOUR NFT",
-        partnerNft: "PARTNER'S NFT",
-        yourUsername: "Your Telegram username",
-        partnerUsername: "Partner's Telegram username",
-        yourLink: "Your NFT link",
-        partnerLink: "Partner's NFT link",
-        preview: "NFT PREVIEW",
-        load: "LOAD NFTS",
-        footer: "ONE TAP TRADE · NFT PREVIEW"
-      }
-    };
+  <div class="footer">ONE TAP TRADE</div>
+</div>
 
-    function setLanguage(lang) {
-      const selected = translations[lang] ? lang : "ru";
-      document.documentElement.lang = selected;
-
-      document.querySelectorAll("[data-i18n]").forEach(element => {
-        const key = element.dataset.i18n;
-        element.textContent = translations[selected][key];
-      });
-
-      document.getElementById("langRU").classList.toggle("active", selected === "ru");
-      document.getElementById("langEN").classList.toggle("active", selected === "en");
-
-      localStorage.setItem("ott-language", selected);
-    }
-
-    document.getElementById("langRU").addEventListener("click", () => setLanguage("ru"));
-    document.getElementById("langEN").addEventListener("click", () => setLanguage("en"));
-
-    setLanguage(localStorage.getItem("ott-language") || "ru");
-  </script>
-
-  <script src="/app.js"></script>
-  <script>
-    if (window.Telegram?.WebApp) {
-      window.Telegram.WebApp.ready();
-      window.Telegram.WebApp.expand();
-    }
-  </script>
+<script src="app.js"></script>
 </body>
 </html>

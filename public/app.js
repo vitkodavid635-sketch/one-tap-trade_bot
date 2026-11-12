@@ -1,12 +1,13 @@
 (function () {
   'use strict';
 
-  /* ---------- Настройки (поправьте под ваш сервер) ---------- */
+  /* ---------- Настройки ---------- */
   var API_ENDPOINT = '/api/validate-nft';
   var API_METHOD = 'POST';          // 'POST' (JSON) или 'GET' (?url=...)
   var REQUEST_TIMEOUT_MS = 20000;
+  var MEDIA_TIMEOUT_MS = 8000;      // сколько ждём старта анимации, затем остаётся статичное изображение
   var LANG_KEY = 'ott_lang';
-  // Поля ответа сервера, в которых может лежать URL изображения:
+  var LOTTIE_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js';
   var IMAGE_KEYS = ['image', 'imageUrl', 'image_url', 'imageURL', 'preview', 'previewUrl', 'preview_url', 'thumbnail', 'picture', 'img'];
 
   /* ---------- Тексты ---------- */
@@ -35,8 +36,8 @@
       errNoImage: 'Сервер не вернул изображение для этого NFT. Для загрузки нужен серверный метод получения метаданных.',
       errImageLoad: 'Не удалось загрузить изображение NFT.',
       errPartial: 'Не все NFT удалось загрузить.',
-      mine: 'Мой NFT',
-      partner: 'NFT партнёра'
+      animOn: '● Оригинальная анимация',
+      animFallback: 'Анимация недоступна — показано статичное изображение.'
     },
     en: {
       myNft: 'My NFT',
@@ -62,8 +63,8 @@
       errNoImage: 'The server did not return an image for this NFT. Loading requires a server-side metadata method.',
       errImageLoad: 'Failed to load the NFT image.',
       errPartial: 'Not all NFTs could be loaded.',
-      mine: 'My NFT',
-      partner: "Partner's NFT"
+      animOn: '● Original animation',
+      animFallback: 'Animation unavailable — showing the static image.'
     }
   };
 
@@ -90,8 +91,10 @@
     status: $('status'), results: $('results')
   };
 
-  // Какой текст ошибки сейчас показан у поля (для перевода при смене языка)
   var fieldErrKeys = {};
+  var statusKey = null;
+  var cardErrKeys = { my: null, partner: null };
+  var noteKeys = { my: null, partner: null };
 
   /* ---------- Язык ---------- */
   function applyLang() {
@@ -112,15 +115,13 @@
     el.langEn.setAttribute('aria-pressed', lang === 'en');
     if (busy) el.loadBtnText.textContent = t('loading');
 
-    // Перевести показанные ошибки полей
     Object.keys(fieldErrKeys).forEach(function (id) {
       if (fieldErrKeys[id]) $(id + 'Err').textContent = t(fieldErrKeys[id]);
     });
-    // Перевести статус и подписи ошибок карточек
     if (statusKey) el.status.textContent = t(statusKey);
     ['my', 'partner'].forEach(function (p) {
-      var fail = $(p + 'NftFail');
-      if (cardErrKeys[p]) fail.textContent = t(cardErrKeys[p]);
+      if (cardErrKeys[p]) $(p + 'NftFail').textContent = t(cardErrKeys[p]);
+      if (noteKeys[p]) $(p + 'NftNote').textContent = t(noteKeys[p]);
     });
   }
 
@@ -132,7 +133,6 @@
   }
 
   /* ---------- Статус ---------- */
-  var statusKey = null;
   function showStatus(kind, key, extra) {
     statusKey = extra ? null : key;
     el.status.className = 'status show ' + kind;
@@ -212,7 +212,6 @@
     );
   }
 
-  // Возвращает { slug, imageUrl|null, raw } или бросает Error с полем code
   function requestNft(link, username) {
     var opts, url = API_ENDPOINT;
     if (API_METHOD === 'GET') {
@@ -247,7 +246,7 @@
           e3.code = 'server';
           throw e3;
         }
-        return { slug: json.slug || null, imageUrl: extractImage(json), raw: json };
+        return { slug: json.slug || null, imageUrl: extractImage(json), media: extractMedia(json), raw: json };
       });
     }, function (e) {
       var err = new Error(e && e.name === 'AbortError' ? 'timeout' : 'network');
@@ -261,8 +260,14 @@
     u = u.trim();
     if (/^https:\/\//i.test(u)) return true;
     if (/^data:image\/(png|jpe?g|webp|gif|svg\+xml);/i.test(u)) return true;
-    if (u.charAt(0) === '/' && u.charAt(1) !== '/') return true; // относительный путь своего сервера
+    if (u.charAt(0) === '/' && u.charAt(1) !== '/') return true;
     return false;
+  }
+
+  function isSafeMediaUrl(u) {
+    if (typeof u !== 'string') return false;
+    u = u.trim();
+    return /^https:\/\//i.test(u) || u.indexOf('/api/nft-media?') === 0;
   }
 
   function extractImage(json) {
@@ -279,6 +284,15 @@
     return null;
   }
 
+  // Анимация только если сервер явно вернул media с поддерживаемым типом
+  function extractMedia(json) {
+    var m = json.media;
+    if (!m || typeof m !== 'object') return null;
+    if (['lottie', 'video', 'gif'].indexOf(m.kind) < 0) return null;
+    if (!isSafeMediaUrl(m.url)) return null;
+    return { kind: m.kind, url: m.url.trim() };
+  }
+
   function preloadImage(src) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
@@ -290,10 +304,133 @@
     });
   }
 
-  /* ---------- Карточки результата ---------- */
-  var cardErrKeys = { my: null, partner: null };
+  /* ---------- Анимация ---------- */
+  var lottiePromise = null;
+  var anims = { my: null, partner: null };
+  var cardToken = { my: 0, partner: 0 };
 
+  function loadLottieLib() {
+    if (window.lottie) return Promise.resolve(window.lottie);
+    if (lottiePromise) return lottiePromise;
+    lottiePromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = LOTTIE_SRC;
+      s.async = true;
+      s.onload = function () { window.lottie ? resolve(window.lottie) : reject(new Error('lottie')); };
+      s.onerror = function () { reject(new Error('lottie')); };
+      document.head.appendChild(s);
+    });
+    lottiePromise.catch(function () { lottiePromise = null; });
+    return lottiePromise;
+  }
+
+  function teardownMedia(prefix) {
+    var box = $(prefix + 'NftMedia');
+    if (anims[prefix]) {
+      try { anims[prefix].destroy(); } catch (e) {}
+      anims[prefix] = null;
+    }
+    var vids = box.querySelectorAll('video');
+    for (var i = 0; i < vids.length; i++) {
+      try { vids[i].pause(); vids[i].removeAttribute('src'); vids[i].load(); } catch (e) {}
+    }
+    box.innerHTML = '';
+    box.classList.remove('pending', 'on');
+    $(prefix + 'NftImage').classList.remove('hide');
+  }
+
+  // Resolve(true) только когда анимация действительно запущена; иначе resolve(false)
+  function mountMedia(prefix, media, token) {
+    return new Promise(function (resolve) {
+      var box = $(prefix + 'NftMedia');
+      var done = false;
+      var timer = setTimeout(function () { finish(false); }, MEDIA_TIMEOUT_MS);
+
+      function finish(ok) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(ok);
+      }
+
+      box.classList.add('pending');
+
+      if (media.kind === 'lottie') {
+        loadLottieLib().then(function (lottie) {
+          if (done || cardToken[prefix] !== token) return finish(false);
+          var anim;
+          try {
+            anim = lottie.loadAnimation({
+              container: box,
+              renderer: 'svg',
+              loop: true,
+              autoplay: true,
+              path: media.url,
+              rendererSettings: { preserveAspectRatio: 'xMidYMid meet' }
+            });
+          } catch (e) { return finish(false); }
+          anims[prefix] = anim;
+          anim.addEventListener('DOMLoaded', function () { finish(true); });
+          anim.addEventListener('data_failed', function () { finish(false); });
+        }, function () { finish(false); });
+      } else if (media.kind === 'video') {
+        var v = document.createElement('video');
+        v.muted = true;
+        v.defaultMuted = true;
+        v.loop = true;
+        v.autoplay = true;
+        v.playsInline = true;
+        v.setAttribute('muted', '');
+        v.setAttribute('playsinline', '');
+        v.preload = 'auto';
+        v.addEventListener('playing', function () { finish(true); });
+        v.addEventListener('error', function () { finish(false); });
+        box.appendChild(v);
+        v.src = media.url;
+        try {
+          var p = v.play();
+          if (p && p.catch) p.catch(function () {});
+        } catch (e) {}
+      } else if (media.kind === 'gif') {
+        var g = new Image();
+        g.alt = '';
+        g.onload = function () { finish(g.naturalWidth > 0); };
+        g.onerror = function () { finish(false); };
+        box.appendChild(g);
+        g.src = media.url;
+      } else {
+        finish(false);
+      }
+    });
+  }
+
+  function setNote(prefix, key, cls) {
+    var n = $(prefix + 'NftNote');
+    noteKeys[prefix] = key || null;
+    n.className = 'nft-note' + (cls ? ' ' + cls : '');
+    n.textContent = key ? t(key) : '';
+  }
+
+  // Запускается после показа статичного изображения и не блокирует кнопку
+  function startAnimation(prefix, media, token) {
+    mountMedia(prefix, media, token).then(function (ok) {
+      if (cardToken[prefix] !== token) return; // карточку уже сбросили
+      if (ok) {
+        $(prefix + 'NftMedia').classList.remove('pending');
+        $(prefix + 'NftMedia').classList.add('on');
+        $(prefix + 'NftImage').classList.add('hide');
+        setNote(prefix, 'animOn', 'ok');
+      } else {
+        teardownMedia(prefix);
+        setNote(prefix, 'animFallback', '');
+      }
+    });
+  }
+
+  /* ---------- Карточки результата ---------- */
   function resetCard(prefix) {
+    cardToken[prefix]++;
+    teardownMedia(prefix);
     var card = $(prefix + 'NftCard');
     var img = $(prefix + 'NftImage');
     card.classList.remove('failed');
@@ -304,6 +441,7 @@
     img.alt = '';
     $(prefix + 'NftName').textContent = '';
     $(prefix + 'NftOwner').textContent = '';
+    setNote(prefix, null, '');
     var sk = card.querySelector('.skeleton');
     if (sk) sk.style.display = '';
   }
@@ -333,16 +471,18 @@
   }
 
   /* ---------- Загрузка одного NFT ---------- */
-  // Всегда резолвится объектом { ok, errKey, networkErr }
   function loadOne(prefix, link, username) {
+    var token = cardToken[prefix];
     return requestNft(link, username).then(function (r) {
       if (!r.imageUrl) return { ok: false, errKey: 'errNoImage' };
       return preloadImage(r.imageUrl).then(function () {
+        if (cardToken[prefix] !== token) return { ok: true };
         fillCard(prefix, {
           imageUrl: r.imageUrl,
           name: nameFromLink(link),
           username: username
         });
+        if (r.media) startAnimation(prefix, r.media, token);
         return { ok: true };
       }, function () {
         return { ok: false, errKey: 'errImageLoad' };
@@ -390,7 +530,7 @@
         if (!r.ok) {
           okAll = false;
           if (!firstKey) { firstKey = r.errKey; firstDetail = r.detail || null; }
-          failCard(p, r.errKey === 'errServer' && r.detail ? 'errServer' : r.errKey);
+          failCard(p, r.errKey);
           if (r.detail) $(p + 'NftFail').textContent = t('errServer') + ': ' + r.detail;
         }
       });
@@ -398,7 +538,6 @@
       if (okAll) {
         showStatus('success', 'success');
       } else {
-        // Если оба упали по одной причине — показываем её, иначе общую
         var sameKey = !res[0].ok && !res[1].ok && res[0].errKey === res[1].errKey;
         if (sameKey) showStatus('error', firstKey, firstDetail);
         else showStatus('error', 'errPartial');
@@ -425,7 +564,7 @@
     });
   });
 
-  /* ---------- Telegram WebApp (если открыто внутри Telegram) ---------- */
+  /* ---------- Telegram WebApp ---------- */
   try {
     var tg = window.Telegram && window.Telegram.WebApp;
     if (tg) {

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>ONE TAP TRADE</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <div class="telegram-brand"><span>TELEGRAM</span><span class="check" aria-label="Telegram connection indicator">✓</span></div>
+      <div class="app-name">ONE TAP TRADE</div>
+      <p class="sub">NFT preview workspace</p>
+    </header>
+
+    <section class="panel intro">
+      <div class="eyebrow">STAGE 01</div>
+      <h1>Prepare your NFT previews</h1>
+      <p>Add a Telegram collectible link and an image. This version prepares the visuals only — deal acceptance comes later.</p>
+    </section>
+
+    <section class="cards">
+      <article class="nft-card">
+        <div class="card-head"><span class="number">01</span><span class="tag">YOUR NFT</span></div>
+        <div class="preview" id="preview1"><div class="placeholder">NFT IMAGE</div></div>
+        <label for="link1">Telegram NFT link</label>
+        <input id="link1" type="url" placeholder="https://t.me/nft/ViceCream-313219">
+        <label for="image1">Image URL (optional)</label>
+        <input id="image1" type="url" placeholder="https://example.com/nft.jpg">
+        <label class="upload">Or choose an image file<input id="file1" type="file" accept="image/*"></label>
+        <div class="status" id="status1"></div>
+      </article>
+
+      <article class="nft-card">
+        <div class="card-head"><span class="number">02</span><span class="tag">PARTNER NFT</span></div>
+        <div class="preview" id="preview2"><div class="placeholder">NFT IMAGE</div></div>
+        <label for="link2">Telegram NFT link</label>
+        <input id="link2" type="url" placeholder="https://t.me/nft/MythMask-15185">
+        <label for="image2">Image URL (optional)</label>
+        <input id="image2" type="url" placeholder="https://example.com/nft.jpg">
+        <label class="upload">Or choose an image file<input id="file2" type="file" accept="image/*"></label>
+        <div class="status" id="status2"></div>
+      </article>
+    </section>
+
+    <button id="checkBtn" class="primary">CHECK NFT LINKS</button>
+    <p id="globalStatus" class="global-status" role="status"></p>
+    <footer>Preview prototype · No transfers or payments</footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

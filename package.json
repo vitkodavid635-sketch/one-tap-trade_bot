@@ -1,0 +1,16 @@
+{
+  "name": "one-tap-trade",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telegram Mini App prototype for NFT deal previews",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js && node --check src/nft.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

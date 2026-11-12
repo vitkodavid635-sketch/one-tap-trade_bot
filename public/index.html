@@ -1,5 +1,6 @@
+
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -11,45 +12,147 @@
 <body>
   <main class="shell">
     <header class="top">
-      <div class="telegram-brand"><span>TELEGRAM</span><span class="check" aria-label="Telegram connection indicator">✓</span></div>
+      <div class="telegram-brand">
+        <span>TELEGRAM</span>
+        <span class="check" aria-label="Telegram connection indicator">✓</span>
+      </div>
+
       <div class="app-name">ONE TAP TRADE</div>
-      <p class="sub">NFT preview workspace</p>
+
+      <div class="language-switch">
+        <button type="button" id="langRU" class="active">RU</button>
+        <button type="button" id="langEN">EN</button>
+      </div>
+
+      <p class="sub" data-i18n="subtitle">Предпросмотр NFT</p>
     </header>
 
     <section class="panel intro">
-      <div class="eyebrow">STAGE 01</div>
-      <h1>Prepare your NFT previews</h1>
-      <p>Add a Telegram collectible link and an image. This version prepares the visuals only — deal acceptance comes later.</p>
+      <div class="eyebrow" data-i18n="stage">ЭТАП 01</div>
+      <h1 data-i18n="heading">Подготовьте изображения NFT</h1>
+      <p data-i18n="description">
+        Добавьте ссылку на коллекционный предмет Telegram и его изображение.
+        Сейчас доступен только предварительный просмотр.
+      </p>
     </section>
 
     <section class="cards">
       <article class="nft-card">
-        <div class="card-head"><span class="number">01</span><span class="tag">YOUR NFT</span></div>
-        <div class="preview" id="preview1"><div class="placeholder">NFT IMAGE</div></div>
-        <label for="link1">Telegram NFT link</label>
-        <input id="link1" type="url" placeholder="https://t.me/nft/ViceCream-313219">
-        <label for="image1">Image URL (optional)</label>
+        <div class="card-head">
+          <span class="number">01</span>
+          <span class="tag" data-i18n="yourNft">ВАШ NFT</span>
+        </div>
+
+        <div class="preview" id="preview1">
+          <div class="placeholder" data-i18n="nftImage">ИЗОБРАЖЕНИЕ NFT</div>
+        </div>
+
+        <label for="link1" data-i18n="nftLink">Ссылка на NFT в Telegram</label>
+        <input id="link1" type="url" placeholder="https://t.me/nft/BDayCandle-202879">
+
+        <label for="image1" data-i18n="imageUrl">Ссылка на изображение (необязательно)</label>
         <input id="image1" type="url" placeholder="https://example.com/nft.jpg">
-        <label class="upload">Or choose an image file<input id="file1" type="file" accept="image/*"></label>
+
+        <label class="upload">
+          <span data-i18n="chooseImage">Или выберите изображение</span>
+          <input id="file1" type="file" accept="image/*">
+        </label>
+
         <div class="status" id="status1"></div>
       </article>
 
       <article class="nft-card">
-        <div class="card-head"><span class="number">02</span><span class="tag">PARTNER NFT</span></div>
-        <div class="preview" id="preview2"><div class="placeholder">NFT IMAGE</div></div>
-        <label for="link2">Telegram NFT link</label>
-        <input id="link2" type="url" placeholder="https://t.me/nft/MythMask-15185">
-        <label for="image2">Image URL (optional)</label>
+        <div class="card-head">
+          <span class="number">02</span>
+          <span class="tag" data-i18n="partnerNft">NFT ПАРТНЁРА</span>
+        </div>
+
+        <div class="preview" id="preview2">
+          <div class="placeholder" data-i18n="nftImage">ИЗОБРАЖЕНИЕ NFT</div>
+        </div>
+
+        <label for="link2" data-i18n="nftLink">Ссылка на NFT в Telegram</label>
+        <input id="link2" type="url" placeholder="https://t.me/nft/ViceCream-313219">
+
+        <label for="image2" data-i18n="imageUrl">Ссылка на изображение (необязательно)</label>
         <input id="image2" type="url" placeholder="https://example.com/nft.jpg">
-        <label class="upload">Or choose an image file<input id="file2" type="file" accept="image/*"></label>
+
+        <label class="upload">
+          <span data-i18n="chooseImage">Или выберите изображение</span>
+          <input id="file2" type="file" accept="image/*">
+        </label>
+
         <div class="status" id="status2"></div>
       </article>
     </section>
 
-    <button id="checkBtn" class="primary">CHECK NFT LINKS</button>
+    <button id="checkBtn" class="primary" data-i18n="check">
+      ПРОВЕРИТЬ ССЫЛКИ NFT
+    </button>
+
     <p id="globalStatus" class="global-status" role="status"></p>
-    <footer>Preview prototype · No transfers or payments</footer>
+
+    <footer data-i18n="footer">
+      Предварительная версия · Без переводов и платежей
+    </footer>
   </main>
+
   <script src="/app.js"></script>
+
+  <script>
+    const translations = {
+      ru: {
+        subtitle: "Предпросмотр NFT",
+        stage: "ЭТАП 01",
+        heading: "Подготовьте изображения NFT",
+        description: "Добавьте ссылку на коллекционный предмет Telegram и его изображение. Сейчас доступен только предварительный просмотр.",
+        yourNft: "ВАШ NFT",
+        partnerNft: "NFT ПАРТНЁРА",
+        nftImage: "ИЗОБРАЖЕНИЕ NFT",
+        nftLink: "Ссылка на NFT в Telegram",
+        imageUrl: "Ссылка на изображение (необязательно)",
+        chooseImage: "Или выберите изображение",
+        check: "ПРОВЕРИТЬ ССЫЛКИ NFT",
+        footer: "Предварительная версия · Без переводов и платежей"
+      },
+      en: {
+        subtitle: "NFT Preview",
+        stage: "STAGE 01",
+        heading: "Prepare your NFT previews",
+        description: "Add a Telegram collectible link and its image. This version supports previews only.",
+        yourNft: "YOUR NFT",
+        partnerNft: "PARTNER NFT",
+        nftImage: "NFT IMAGE",
+        nftLink: "Telegram NFT link",
+        imageUrl: "Image URL (optional)",
+        chooseImage: "Or choose an image file",
+        check: "CHECK NFT LINKS",
+        footer: "Preview prototype · No transfers or payments"
+      }
+    };
+
+    function setLanguage(lang) {
+      const selected = translations[lang] ? lang : "ru";
+
+      document.documentElement.lang = selected;
+
+      document.querySelectorAll("[data-i18n]").forEach(element => {
+        const key = element.dataset.i18n;
+        if (translations[selected][key]) {
+          element.textContent = translations[selected][key];
+        }
+      });
+
+      document.getElementById("langRU").classList.toggle("active", selected === "ru");
+      document.getElementById("langEN").classList.toggle("active", selected === "en");
+
+      localStorage.setItem("ott-language", selected);
+    }
+
+    document.getElementById("langRU").addEventListener("click", () => setLanguage("ru"));
+    document.getElementById("langEN").addEventListener("click", () => setLanguage("en"));
+
+    setLanguage(localStorage.getItem("ott-language") || "ru");
+  </script>
 </body>
 </html>

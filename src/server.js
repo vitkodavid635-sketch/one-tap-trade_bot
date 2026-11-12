@@ -2,7 +2,7 @@
 
 const path = require('path');
 const express = require('express');
-const { getNft, NftError } = require('./nft');
+const { getNft, getNftMedia, NftError } = require('./nft');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,7 +12,7 @@ app.use(express.json({ limit: '10kb' }));
 
 /* ---------- Простой лимит запросов (на IP, в памяти) ---------- */
 const RATE_WINDOW_MS = 60 * 1000;
-const RATE_MAX = 40;
+const RATE_MAX = 120; // на одну загрузку пары NFT уходит до 4 запросов (2 данные + 2 анимации)
 const hits = new Map();
 
 function rateLimit(req, res, next) {
@@ -41,38 +41,56 @@ setInterval(() => {
   }
 }, RATE_WINDOW_MS).unref();
 
-/* ---------- Обработчик NFT ---------- */
+function sendError(res, e) {
+  if (e instanceof NftError) {
+    return res.status(e.status).json({ ok: false, code: e.code, error: e.message });
+  }
+  console.error('Unexpected error:', e);
+  return res.status(500).json({
+    ok: false,
+    code: 'INTERNAL_ERROR',
+    error: 'Внутренняя ошибка сервера / Internal server error'
+  });
+}
+
+/* ---------- Данные NFT ---------- */
 async function nftHandler(req, res) {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const link = body.url || body.link || req.query.url || req.query.link;
-
   try {
     const nft = await getNft(link);
     res.json(Object.assign({ ok: true, valid: true }, nft));
   } catch (e) {
-    if (e instanceof NftError) {
-      return res.status(e.status).json({ ok: false, code: e.code, error: e.message });
-    }
-    console.error('Unexpected NFT error:', e);
-    res.status(500).json({
-      ok: false,
-      code: 'INTERNAL_ERROR',
-      error: 'Внутренняя ошибка сервера / Internal server error'
+    sendError(res, e);
+  }
+}
+
+/* ---------- Файл анимации (Lottie JSON) ---------- */
+async function mediaHandler(req, res) {
+  try {
+    const file = await getNftMedia(req.query.slug);
+    res.set({
+      'Content-Type': file.contentType,
+      'Cache-Control': 'public, max-age=300',
+      'X-Content-Type-Options': 'nosniff'
     });
+    res.send(file.body);
+  } catch (e) {
+    sendError(res, e);
   }
 }
 
 /* ---------- API ---------- */
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// Новый endpoint
 app.get('/api/nft', rateLimit, nftHandler);
 app.post('/api/nft', rateLimit, nftHandler);
 
-// Старый endpoint сохранён для совместимости с frontend:
-// теперь он тоже возвращает slug + image + название + владельца.
+// Старый endpoint сохранён для совместимости с frontend
 app.get('/api/validate-nft', rateLimit, nftHandler);
 app.post('/api/validate-nft', rateLimit, nftHandler);
+
+app.get('/api/nft-media', rateLimit, mediaHandler);
 
 app.use('/api', (req, res) => {
   res.status(404).json({ ok: false, code: 'NOT_FOUND', error: 'Endpoint не найден / Endpoint not found' });

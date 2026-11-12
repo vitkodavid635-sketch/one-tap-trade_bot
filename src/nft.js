@@ -1,16 +1,28 @@
 'use strict';
 
 /**
- * Получение данных Telegram NFT с публичной страницы https://t.me/nft/<Slug>-<Number>
- * Используются Open Graph мета-теги и таблица свойств на странице.
- * Зависимостей нет (нужен Node.js 18+ с глобальным fetch).
+ * Данные Telegram NFT:
+ *  1) публичная страница https://t.me/nft/<Slug>-<Number>  (название, статичная картинка, владелец, свойства)
+ *  2) метаданные https://nft.fragment.com/gift/<slug>.json  (ссылка на анимацию, если она там есть)
+ * Зависимостей нет (Node.js 18+).
  */
 
 const NFT_LINK_RE = /^https:\/\/t\.me\/nft\/([A-Za-z0-9]+)-(\d+)\/?$/;
 const FETCH_TIMEOUT_MS = 10000;
+const META_TIMEOUT_MS = 8000;
 const MAX_HTML_LENGTH = 2 * 1024 * 1024;
+const MAX_JSON_LENGTH = 1 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const SHORT_TTL_MS = 20 * 1000;
 const CACHE_MAX = 500;
+
+const UA = 'Mozilla/5.0 (compatible; OneTapTrade/1.0)';
+
+// Только эти хосты считаются допустимыми источниками медиа
+const MEDIA_HOSTS = [/^nft\.fragment\.com$/i, /^fragment\.com$/i, /(^|\.)telesco\.pe$/i];
+// Поля метаданных, в которых может быть ссылка на анимацию
+const ANIMATION_KEYS = ['lottie', 'animation_url', 'animation', 'video', 'video_url'];
 
 class NftError extends Error {
   constructor(code, message, status) {
@@ -97,7 +109,6 @@ function parseRows(html) {
 
 function parseOwner(row) {
   if (!row) return null;
-  const text = row.value;
   let username = null;
   let url = null;
   const href = /<a\b[^>]*href\s*=\s*["']([^"']+)["']/i.exec(row.valueHtml);
@@ -109,11 +120,10 @@ function parseOwner(row) {
       url = 'https://t.me/' + u[1];
     }
   }
-  return { text: text, username: username, url: url };
+  return { text: row.value, username: username, url: url };
 }
 
 function parseAttribute(row) {
-  // "Jage Crystal 1.2%" -> { name, value, rarity }
   const m = /^(.*?)\s*(\d+(?:[.,]\d+)?)\s*%$/.exec(row.value);
   if (m && m[1]) {
     return { name: row.label, value: m[1].trim(), rarity: m[2].replace(',', '.') + '%' };
@@ -123,7 +133,6 @@ function parseAttribute(row) {
 
 function isUsableImageUrl(u) {
   if (!u || !/^https:\/\//i.test(u)) return false;
-  // общие картинки-заглушки Telegram не считаем изображением NFT
   if (/^https:\/\/(?:www\.)?telegram\.org\/img\//i.test(u)) return false;
   return true;
 }
@@ -147,9 +156,7 @@ function parseNftPage(html, link) {
   const name = tm && tm[1] ? tm[1].trim() : (title || link.collection);
 
   const ownerRow = rows.find((r) => r.label.toLowerCase() === 'owner');
-  const attributes = rows
-    .filter((r) => r !== ownerRow)
-    .map(parseAttribute);
+  const attributes = rows.filter((r) => r !== ownerRow).map(parseAttribute);
 
   return {
     slug: link.slug,
@@ -158,14 +165,14 @@ function parseNftPage(html, link) {
     number: link.number,
     name: name,
     title: title || (name + ' #' + link.number),
-    image: image,
+    image: image, // статичное превью с t.me
     description: meta['og:description'] || null,
     owner: parseOwner(ownerRow),
     attributes: attributes
   };
 }
 
-/* ---------- Загрузка ---------- */
+/* ---------- Загрузка страницы t.me ---------- */
 
 async function fetchPage(link) {
   let res;
@@ -174,7 +181,7 @@ async function fetchPage(link) {
       method: 'GET',
       redirect: 'manual',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; OneTapTrade/1.0)',
+        'User-Agent': UA,
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9'
       },
@@ -209,6 +216,72 @@ async function fetchPage(link) {
   return html;
 }
 
+/* ---------- Метаданные с анимацией (nft.fragment.com) ---------- */
+
+function isAllowedMediaUrl(u) {
+  try {
+    const x = new URL(u);
+    return x.protocol === 'https:' && MEDIA_HOSTS.some((re) => re.test(x.hostname));
+  } catch (e) {
+    return false;
+  }
+}
+
+// Тип определяется строго по расширению того URL, который вернул источник
+function classifyMedia(u) {
+  let p;
+  try { p = new URL(u).pathname.toLowerCase(); } catch (e) { return null; }
+  if (/\.json$/.test(p)) return { kind: 'lottie', mime: 'application/json' };
+  if (/\.mp4$/.test(p)) return { kind: 'video', mime: 'video/mp4' };
+  if (/\.webm$/.test(p)) return { kind: 'video', mime: 'video/webm' };
+  if (/\.gif$/.test(p)) return { kind: 'gif', mime: 'image/gif' };
+  return null; // .tgs и прочее не используем
+}
+
+function extractMedia(meta, link) {
+  if (!meta || typeof meta !== 'object') return null;
+  for (const key of ANIMATION_KEYS) {
+    const v = meta[key];
+    if (typeof v !== 'string') continue;
+    const u = v.trim();
+    if (!isAllowedMediaUrl(u)) continue;
+    const c = classifyMedia(u);
+    if (!c) continue;
+    return {
+      kind: c.kind,
+      mime: c.mime,
+      field: key,
+      originalUrl: u,
+      // Lottie отдаём через наш сервер (без проблем с CORS); видео и GIF — напрямую
+      url: c.kind === 'lottie' ? '/api/nft-media?slug=' + encodeURIComponent(link.slug) : u
+    };
+  }
+  return null;
+}
+
+// Никогда не бросает: возвращает { state: 'ok' | 'none' | 'unavailable', json? }
+async function fetchMetadata(link) {
+  const url = 'https://nft.fragment.com/gift/' + link.slug.toLowerCase() + '.json';
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(META_TIMEOUT_MS)
+    });
+    if (res.status === 404) return { state: 'none' };
+    if (!res.ok) return { state: 'unavailable' };
+    const text = await res.text();
+    if (text.length > MAX_JSON_LENGTH) return { state: 'unavailable' };
+    let json;
+    try { json = JSON.parse(text); } catch (e) { return { state: 'unavailable' }; }
+    if (!json || typeof json !== 'object') return { state: 'unavailable' };
+    return { state: 'ok', json: json };
+  } catch (e) {
+    return { state: 'unavailable' };
+  }
+}
+
 /* ---------- Кэш ---------- */
 
 const cache = new Map();
@@ -216,21 +289,21 @@ const cache = new Map();
 function cacheGet(slug) {
   const hit = cache.get(slug);
   if (!hit) return null;
-  if (Date.now() - hit.at > CACHE_TTL_MS) {
+  if (Date.now() - hit.at > hit.ttl) {
     cache.delete(slug);
     return null;
   }
   return hit.data;
 }
 
-function cacheSet(slug, data) {
+function cacheSet(slug, data, ttl) {
   if (cache.size >= CACHE_MAX) {
     cache.delete(cache.keys().next().value);
   }
-  cache.set(slug, { at: Date.now(), data: data });
+  cache.set(slug, { at: Date.now(), ttl: ttl, data: data });
 }
 
-/* ---------- Публичная функция ---------- */
+/* ---------- Публичные функции ---------- */
 
 async function getNft(inputLink) {
   const link = parseNftLink(inputLink);
@@ -245,11 +318,87 @@ async function getNft(inputLink) {
   const cached = cacheGet(link.slug);
   if (cached) return cached;
 
-  const html = await fetchPage(link);
+  const [html, metaRes] = await Promise.all([fetchPage(link), fetchMetadata(link)]);
   const data = parseNftPage(html, link);
+
+  data.media = null;
+  if (metaRes.state === 'ok') {
+    const media = extractMedia(metaRes.json, link);
+    if (media) {
+      data.media = media;
+      data.animation = { available: true, kind: media.kind, reason: null };
+    } else {
+      // Метаданные получены, но анимации в них нет — считаем NFT статичным
+      data.animation = { available: false, kind: null, reason: 'NO_ANIMATION_IN_METADATA' };
+    }
+  } else {
+    data.animation = { available: false, kind: null, reason: 'METADATA_UNAVAILABLE' };
+  }
+
   data.fetchedAt = new Date().toISOString();
-  cacheSet(link.slug, data);
+  const ttl = metaRes.state === 'ok' || metaRes.state === 'none' ? CACHE_TTL_MS : SHORT_TTL_MS;
+  cacheSet(link.slug, data, ttl);
   return data;
 }
 
-module.exports = { getNft, parseNftLink, parseNftPage, NftError };
+// Отдаёт Lottie JSON из того URL, что вернул источник для этого slug
+async function getNftMedia(slugInput) {
+  const link = parseNftLink('https://t.me/nft/' + String(slugInput || ''));
+  if (!link) {
+    throw new NftError('INVALID_LINK', 'Неверный slug / Invalid slug', 400);
+  }
+
+  const nft = await getNft(link.url);
+  if (!nft.media || nft.media.kind !== 'lottie' || !isAllowedMediaUrl(nft.media.originalUrl)) {
+    throw new NftError('NO_ANIMATION', 'Анимация недоступна / Animation is not available', 404);
+  }
+
+  let res;
+  try {
+    res = await fetch(nft.media.originalUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    });
+  } catch (e) {
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      throw new NftError('FETCH_TIMEOUT', 'Источник анимации не ответил вовремя / Animation source timed out', 504);
+    }
+    throw new NftError('FETCH_ERROR', 'Ошибка загрузки анимации / Failed to fetch animation', 502);
+  }
+
+  if (res.status === 404) {
+    throw new NftError('NO_ANIMATION', 'Анимация недоступна / Animation is not available', 404);
+  }
+  if (!res.ok) {
+    throw new NftError('DATA_UNAVAILABLE', 'Анимация недоступна (HTTP ' + res.status + ') / Animation unavailable', 502);
+  }
+
+  const declared = parseInt(res.headers.get('content-length') || '0', 10);
+  if (declared > MAX_MEDIA_BYTES) {
+    throw new NftError('DATA_UNAVAILABLE', 'Файл анимации слишком большой / Animation file too large', 502);
+  }
+
+  let buf;
+  try {
+    buf = Buffer.from(await res.arrayBuffer());
+  } catch (e) {
+    throw new NftError('FETCH_ERROR', 'Ошибка чтения анимации / Failed to read animation', 502);
+  }
+  if (buf.length > MAX_MEDIA_BYTES) {
+    throw new NftError('DATA_UNAVAILABLE', 'Файл анимации слишком большой / Animation file too large', 502);
+  }
+
+  // Проверяем, что это действительно Lottie JSON (есть массив layers)
+  try {
+    const j = JSON.parse(buf.toString('utf8'));
+    if (!j || typeof j !== 'object' || !Array.isArray(j.layers)) throw new Error('not lottie');
+  } catch (e) {
+    throw new NftError('DATA_UNAVAILABLE', 'Файл анимации повреждён / Animation file is invalid', 502);
+  }
+
+  return { body: buf, contentType: 'application/json; charset=utf-8' };
+}
+
+module.exports = { getNft, getNftMedia, parseNftLink, parseNftPage, NftError };

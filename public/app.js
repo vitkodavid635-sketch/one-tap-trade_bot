@@ -372,6 +372,34 @@
     return lottiePromise;
   }
 
+  // Файл Lottie запрашиваем сами, параллельно с загрузкой библиотеки.
+  // Повторные загрузки берутся из HTTP-кэша браузера (сервер отдаёт Cache-Control/ETag).
+  function fetchLottieData(url) {
+    return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (res) {
+      if (!res.ok) {
+        var e1 = new Error('http');
+        e1.detail = 'HTTP ' + res.status;
+        throw e1;
+      }
+      return res.json().then(function (data) {
+        if (!data || !Array.isArray(data.layers)) {
+          var e2 = new Error('not lottie');
+          e2.detail = 'not a Lottie file';
+          throw e2;
+        }
+        return data;
+      }, function () {
+        var e3 = new Error('json');
+        e3.detail = 'invalid JSON';
+        throw e3;
+      });
+    }, function () {
+      var e4 = new Error('network');
+      e4.detail = 'network';
+      throw e4;
+    });
+  }
+
   function teardownMedia(prefix) {
     var box = $(prefix + 'NftMedia');
     if (anims[prefix]) {
@@ -404,27 +432,40 @@
       box.classList.add('pending');
 
       if (media.kind === 'lottie') {
-        loadLottieLib().then(function (lottie) {
+        // Библиотека и файл анимации загружаются одновременно
+        Promise.all([loadLottieLib(), fetchLottieData(media.url)]).then(function (r) {
           if (done || cardToken[prefix] !== token) return finish(false, 'cancelled');
           var anim;
           try {
-            anim = lottie.loadAnimation({
+            anim = r[0].loadAnimation({
               container: box,
               renderer: 'svg',
               loop: true,
               autoplay: true,
-              path: media.url,
+              animationData: r[1],
               rendererSettings: { preserveAspectRatio: 'xMidYMid meet' }
             });
           } catch (e) { return finish(false, 'lottie init'); }
           anims[prefix] = anim;
-          anim.addEventListener('DOMLoaded', function () {
-            // Одного кадра недостаточно для анимации
-            if (anim.totalFrames === undefined || anim.totalFrames > 1) finish(true);
-            else finish(false, 'single frame');
-          });
+
+          // С animationData событие могло сработать до подписки, поэтому проверяем состояние напрямую
+          var tries = 0;
+          function check() {
+            if (done) return;
+            if (anim.isLoaded || anim.totalFrames > 0) {
+              // Одного кадра недостаточно для анимации
+              if (anim.totalFrames > 1) finish(true);
+              else finish(false, 'single frame');
+              return;
+            }
+            if (++tries < 400) setTimeout(check, 25);
+          }
+          anim.addEventListener('DOMLoaded', check);
           anim.addEventListener('data_failed', function () { finish(false, 'lottie data failed'); });
-        }, function () { finish(false, 'lottie-web not loaded'); });
+          check();
+        }, function (e) {
+          finish(false, (e && e.detail) || 'lottie-web not loaded');
+        });
       } else if (media.kind === 'video') {
         // WEBM / MP4: autoplay, без звука, с повтором, inline
         var v = document.createElement('video');
@@ -465,10 +506,14 @@
     n.textContent = key ? noteText(prefix) : '';
   }
 
+  // Как только анимация реально играет — плавно переключаем карточку с статичного изображения на неё
   function startAnimation(prefix, media, token) {
     mountMedia(prefix, media, token).then(function (r) {
-      if (cardToken[prefix] !== token) return; // карточку уже сбросили
+      if (cardToken[prefix] !== token) return; // карточку уже сбросили или она завершилась ошибкой
       if (r.ok) {
+        var card = $(prefix + 'NftCard');
+        var sk = card.querySelector('.skeleton');
+        if (sk) sk.style.display = 'none';
         $(prefix + 'NftMedia').classList.remove('pending');
         $(prefix + 'NftMedia').classList.add('on');
         $(prefix + 'NftImage').classList.add('hide');
@@ -500,6 +545,10 @@
   }
 
   function failCard(prefix, key) {
+    // Поздний результат анимации для неудавшейся карточки не нужен
+    cardToken[prefix]++;
+    teardownMedia(prefix);
+    setNote(prefix, null, '', null);
     cardErrKeys[prefix] = key;
     var card = $(prefix + 'NftCard');
     $(prefix + 'NftFail').textContent = t(key);
@@ -530,8 +579,19 @@
 
   /* ---------- Загрузка одного NFT ---------- */
   // Успех зависит только от прежнего этапа (данные + статичное изображение).
+  // Анимация запрашивается СРАЗУ, параллельно с получением NFT, и не блокирует результат.
   function loadOne(prefix, link, username) {
     var token = cardToken[prefix];
+
+    var slug = slugFromLink(link);
+    if (slug) {
+      requestAnimation(slug).then(function (a) {
+        if (cardToken[prefix] !== token) return;
+        if (a.media) startAnimation(prefix, a.media, token);
+        else setNote(prefix, a.noteKey, '', a.detail);
+      });
+    }
+
     return requestNft(link, username).then(function (r) {
       if (!r.imageUrl) return { ok: false, errKey: 'errNoImage' };
       return preloadImage(r.imageUrl).then(function () {
@@ -541,16 +601,6 @@
           name: nameFromLink(link),
           username: username
         });
-
-        // Анимация — отдельный необязательный шаг, не блокирует результат
-        var slug = r.slug || slugFromLink(link);
-        if (slug) {
-          requestAnimation(slug).then(function (a) {
-            if (cardToken[prefix] !== token) return;
-            if (a.media) startAnimation(prefix, a.media, token);
-            else setNote(prefix, a.noteKey, '', a.detail);
-          });
-        }
         return { ok: true };
       }, function () {
         return { ok: false, errKey: 'errImageLoad' };
@@ -586,6 +636,7 @@
     el.results.classList.add('show');
     showStatus('info', 'checking');
 
+    // Оба NFT (и их анимации) стартуют одновременно
     Promise.all([
       loadOne('my', data.myLink, data.myUsername),
       loadOne('partner', data.partnerLink, data.partnerUsername)
@@ -644,4 +695,7 @@
   } catch (e) {}
 
   applyLang();
+
+  // Библиотеку lottie-web подгружаем заранее, пока пользователь вводит данные
+  setTimeout(function () { loadLottieLib().catch(function () {}); }, 300);
 })();

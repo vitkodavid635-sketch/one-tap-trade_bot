@@ -4,6 +4,7 @@
   /* ---------- Настройки ---------- */
   var API_ENDPOINT = '/api/validate-nft';
   var API_METHOD = 'POST';          // 'POST' (JSON) или 'GET' (?url=...)
+  var ANIMATION_ENDPOINT = '/api/nft-animation';
   var REQUEST_TIMEOUT_MS = 20000;
   var MEDIA_TIMEOUT_MS = 8000;      // сколько ждём старта анимации, затем остаётся статичное изображение
   var LANG_KEY = 'ott_lang';
@@ -37,7 +38,10 @@
       errImageLoad: 'Не удалось загрузить изображение NFT.',
       errPartial: 'Не все NFT удалось загрузить.',
       animOn: '● Оригинальная анимация',
-      animFallback: 'Анимация недоступна — показано статичное изображение.'
+      animFallback: 'Не удалось воспроизвести анимацию — показано статичное изображение.',
+      animMeta: 'Данные анимации недоступны — показано статичное изображение.',
+      animUnsupported: 'Формат анимации не поддерживается — показано статичное изображение.',
+      animMedia: 'Не удалось загрузить файл анимации — показано статичное изображение.'
     },
     en: {
       myNft: 'My NFT',
@@ -64,8 +68,18 @@
       errImageLoad: 'Failed to load the NFT image.',
       errPartial: 'Not all NFTs could be loaded.',
       animOn: '● Original animation',
-      animFallback: 'Animation unavailable — showing the static image.'
+      animFallback: 'Could not play the animation — showing the static image.',
+      animMeta: 'Animation data is unavailable — showing the static image.',
+      animUnsupported: 'Animation format is not supported — showing the static image.',
+      animMedia: 'Could not load the animation file — showing the static image.'
     }
+  };
+
+  // Причина от сервера -> ключ заметки под карточкой (для остальных причин заметки нет)
+  var REASON_NOTE = {
+    METADATA_UNAVAILABLE: 'animMeta',
+    UNSUPPORTED_FORMAT: 'animUnsupported',
+    MEDIA_UNAVAILABLE: 'animMedia'
   };
 
   var USERNAME_RE = /^[A-Za-z][A-Za-z0-9_]{4,31}$/;
@@ -212,6 +226,7 @@
     );
   }
 
+  // Получение NFT — прежняя логика, анимация здесь не участвует
   function requestNft(link, username) {
     var opts, url = API_ENDPOINT;
     if (API_METHOD === 'GET') {
@@ -246,7 +261,7 @@
           e3.code = 'server';
           throw e3;
         }
-        return { slug: json.slug || null, imageUrl: extractImage(json), media: extractMedia(json), raw: json };
+        return { slug: json.slug || null, imageUrl: extractImage(json), raw: json };
       });
     }, function (e) {
       var err = new Error(e && e.name === 'AbortError' ? 'timeout' : 'network');
@@ -284,15 +299,6 @@
     return null;
   }
 
-  // Анимация только если сервер явно вернул media с поддерживаемым типом
-  function extractMedia(json) {
-    var m = json.media;
-    if (!m || typeof m !== 'object') return null;
-    if (['lottie', 'video', 'gif'].indexOf(m.kind) < 0) return null;
-    if (!isSafeMediaUrl(m.url)) return null;
-    return { kind: m.kind, url: m.url.trim() };
-  }
-
   function preloadImage(src) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
@@ -302,6 +308,26 @@
       img.onerror = function () { reject(new Error('load')); };
       img.src = src;
     });
+  }
+
+  // Запрос анимации — отдельный слой. НИКОГДА не отклоняется и не влияет на загрузку NFT.
+  // Возвращает { media: {kind,url}|null, noteKey: string|null }
+  function requestAnimation(slug) {
+    var url = ANIMATION_ENDPOINT + '?slug=' + encodeURIComponent(slug);
+    return fetchWithTimeout(url, { method: 'GET', headers: { 'Accept': 'application/json' } })
+      .then(function (res) {
+        if (!res.ok) return { media: null, noteKey: null };
+        return res.json().then(function (j) {
+          if (!j || typeof j !== 'object' || j.ok === false) return { media: null, noteKey: null };
+          var m = j.media;
+          if (m && typeof m === 'object' && ['lottie', 'video', 'gif'].indexOf(m.kind) >= 0 && isSafeMediaUrl(m.url)) {
+            return { media: { kind: m.kind, url: m.url.trim() }, noteKey: null };
+          }
+          var reason = j.animation && j.animation.reason;
+          return { media: null, noteKey: REASON_NOTE[reason] || null };
+        });
+      })
+      .catch(function () { return { media: null, noteKey: null }; });
   }
 
   /* ---------- Анимация ---------- */
@@ -374,6 +400,7 @@
           anim.addEventListener('data_failed', function () { finish(false); });
         }, function () { finish(false); });
       } else if (media.kind === 'video') {
+        // WEBM / MP4: без звука, с повтором, автозапуск
         var v = document.createElement('video');
         v.muted = true;
         v.defaultMuted = true;
@@ -411,7 +438,6 @@
     n.textContent = key ? t(key) : '';
   }
 
-  // Запускается после показа статичного изображения и не блокирует кнопку
   function startAnimation(prefix, media, token) {
     mountMedia(prefix, media, token).then(function (ok) {
       if (cardToken[prefix] !== token) return; // карточку уже сбросили
@@ -470,7 +496,13 @@
     return m ? m[1] + ' #' + m[2] : link;
   }
 
+  function slugFromLink(link) {
+    var m = NFT_LINK_RE.exec(link);
+    return m ? m[1] + '-' + m[2] : null;
+  }
+
   /* ---------- Загрузка одного NFT ---------- */
+  // Успех зависит только от прежнего этапа (данные + статичное изображение).
   function loadOne(prefix, link, username) {
     var token = cardToken[prefix];
     return requestNft(link, username).then(function (r) {
@@ -482,7 +514,16 @@
           name: nameFromLink(link),
           username: username
         });
-        if (r.media) startAnimation(prefix, r.media, token);
+
+        // Анимация — отдельный необязательный шаг, не блокирует результат
+        var slug = r.slug || slugFromLink(link);
+        if (slug) {
+          requestAnimation(slug).then(function (a) {
+            if (cardToken[prefix] !== token) return;
+            if (a.media) startAnimation(prefix, a.media, token);
+            else if (a.noteKey) setNote(prefix, a.noteKey, '');
+          });
+        }
         return { ok: true };
       }, function () {
         return { ok: false, errKey: 'errImageLoad' };

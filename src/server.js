@@ -67,7 +67,8 @@ async function nftHandler(req, res) {
 }
 
 /* ---------- Анимация: отдельный необязательный слой ---------- */
-// Всегда отвечает ok:true, если slug корректный. Проблемы источника — в animation.reason.
+// Всегда отвечает ok:true, если slug корректный. Причина отсутствия анимации — в animation.reason/detail.
+// Блок debug показывает, что именно вернул источник (для диагностики).
 async function animationHandler(req, res) {
   try {
     const r = await getNftAnimation(req.query.slug);
@@ -76,14 +77,15 @@ async function animationHandler(req, res) {
       ok: true,
       slug: r.slug,
       animation: r.animation,
-      media: m ? { kind: m.kind, format: m.format, mime: m.mime, url: m.url } : null
+      media: m ? { kind: m.kind, format: m.format, mime: m.mime, url: m.url } : null,
+      debug: r.debug
     });
   } catch (e) {
     sendError(res, e);
   }
 }
 
-// Файл Lottie-анимации (через наш сервер, адрес берётся из проверенных метаданных, не из запроса)
+// Файл Lottie-анимации (через наш сервер; адрес берётся из проверенных данных, не из запроса)
 async function mediaHandler(req, res) {
   try {
     const file = await getAnimationFile(req.query.slug);

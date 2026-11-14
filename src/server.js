@@ -1,9 +1,11 @@
 'use strict';
 
 const path = require('path');
+const zlib = require('zlib');
+const { Readable, Transform, pipeline } = require('stream');
 const express = require('express');
 const { getNft, NftError } = require('./nft');
-const { getNftAnimation, getAnimationFile } = require('./animation');
+const { getNftAnimation, openAnimationFile, MAX_MEDIA_BYTES } = require('./animation');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -73,6 +75,8 @@ async function animationHandler(req, res) {
   try {
     const r = await getNftAnimation(req.query.slug);
     const m = r.media;
+    // Найденную анимацию можно кэшировать в браузере; отсутствие и ошибки — нет
+    res.set('Cache-Control', r.animation.available ? 'public, max-age=300' : 'no-store');
     res.json({
       ok: true,
       slug: r.slug,
@@ -85,16 +89,64 @@ async function animationHandler(req, res) {
   }
 }
 
-// Файл Lottie-анимации (через наш сервер; адрес берётся из проверенных данных, не из запроса)
+// Файл Lottie-анимации: поток через наш сервер (адрес берётся из проверенных данных, не из запроса)
 async function mediaHandler(req, res) {
   try {
-    const file = await getAnimationFile(req.query.slug);
+    const info = await getNftAnimation(req.query.slug);
+    const media = info.media;
+    if (!media || media.kind !== 'lottie') {
+      throw new NftError('NO_ANIMATION', 'Анимация недоступна / Animation is not available', 404);
+    }
+
+    // HTTP-кэш: файл конкретного NFT не меняется; ETag берём из проверки источника
+    const etag = media.etag ? (media.etag.indexOf('W/') === 0 ? media.etag : 'W/' + media.etag) : null;
+    const cacheControl = 'public, max-age=86400';
+    if (etag) {
+      const inm = String(req.headers['if-none-match'] || '')
+        .split(',').map((s) => s.trim());
+      if (inm.indexOf(etag) >= 0) {
+        res.set({ 'ETag': etag, 'Cache-Control': cacheControl, 'Vary': 'Accept-Encoding' });
+        return res.status(304).end();
+      }
+    }
+
+    const file = await openAnimationFile(media);
+
+    // Заголовки ставим только после успешного открытия файла, чтобы ошибки не кэшировались
+    res.status(200);
     res.set({
-      'Content-Type': file.contentType,
-      'Cache-Control': 'public, max-age=300',
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': cacheControl,
+      'Vary': 'Accept-Encoding',
       'X-Content-Type-Options': 'nosniff'
     });
-    res.send(file.body);
+    if (etag) res.set('ETag', etag);
+    if (file.lastModified) res.set('Last-Modified', file.lastModified);
+
+    const gzip = req.acceptsEncodings('gzip') === 'gzip';
+    if (gzip) res.set('Content-Encoding', 'gzip');
+
+    // Ограничение размера на лету
+    let total = 0;
+    const limiter = new Transform({
+      transform(chunk, enc, cb) {
+        total += chunk.length;
+        if (total > MAX_MEDIA_BYTES) return cb(new Error('animation file too large'));
+        cb(null, chunk);
+      }
+    });
+
+    const parts = [Readable.fromWeb(file.body), limiter];
+    if (gzip) parts.push(zlib.createGzip({ level: 4 }));
+    parts.push(res);
+
+    // При ошибке или обрыве клиента pipeline закрывает все потоки (в том числе запрос к источнику)
+    pipeline(...parts, function (err) {
+      if (err) {
+        console.error('Animation stream error:', err.message);
+        try { res.destroy(err); } catch (e) {}
+      }
+    });
   } catch (e) {
     sendError(res, e);
   }

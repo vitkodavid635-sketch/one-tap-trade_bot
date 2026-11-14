@@ -5,10 +5,15 @@
  *
  * Источник: https://nft.fragment.com/gift/<slug>.json
  * По открытым описаниям (статья на tproger.ru, справочник nxrix/telegram-gifts) этот JSON
- * содержит поля "image" (webp) и "lottie" (ссылка на <slug>.lottie.json).
- * Дополнительно, если в метаданных нет ссылки на анимацию, проверяется адрес
- * https://nft.fragment.com/gift/<slug>.lottie.json — он указан в том же справочнике.
+ * содержит поле "lottie" (ссылка на <slug>.lottie.json). Если ссылки в метаданных нет,
+ * проверяется адрес https://nft.fragment.com/gift/<slug>.lottie.json из того же справочника.
  * Любой файл принимается только после проверки его реального содержимого (первые байты).
+ *
+ * Ускорение:
+ *  - запросы метаданных и проверки файла идут параллельно (спекулятивная проверка адреса);
+ *  - одновременные запросы по одному slug объединяются в один (in-flight);
+ *  - результат кэшируется: успех — долго, "анимации нет" — средне, временные ошибки — коротко;
+ *  - файл анимации отдаётся потоком (см. openAnimationFile), а не целиком в память.
  *
  * Ошибки этого слоя никогда не превращаются в "NFT not found":
  * getNftAnimation не бросает из-за проблем источника, а возвращает reason/detail/debug.
@@ -18,13 +23,16 @@ const { parseNftLink, NftError } = require('./nft');
 
 const META_TIMEOUT_MS = 8000;
 const PROBE_TIMEOUT_MS = 8000;
-const FILE_TIMEOUT_MS = 10000;
+const FILE_TIMEOUT_MS = 15000;
 const MAX_REDIRECTS = 3;
 const MAX_JSON_LENGTH = 1 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
-const OK_TTL_MS = 5 * 60 * 1000;
-const FAIL_TTL_MS = 20 * 1000;
-const CACHE_MAX = 500;
+
+// Время жизни кэша
+const SUCCESS_TTL_MS = 30 * 60 * 1000;   // анимация найдена
+const NEGATIVE_TTL_MS = 5 * 60 * 1000;   // источник уверенно ответил, что анимации нет
+const TRANSIENT_TTL_MS = 20 * 1000;      // сетевые ошибки / HTTP 5xx — повторим скоро
+const CACHE_MAX = 1000;
 
 const UA = 'Mozilla/5.0 (compatible; OneTapTrade/1.0)';
 
@@ -51,10 +59,6 @@ function isAllowedMediaUrl(u) {
   } catch (e) {
     return false;
   }
-}
-
-function hostOf(u) {
-  try { return new URL(u).hostname; } catch (e) { return null; }
 }
 
 function describeError(e) {
@@ -153,6 +157,19 @@ async function probeMedia(url) {
   }
   if (!res.body) return { state: 'unavailable', detail: 'empty body' };
 
+  // Заголовки для HTTP-кэширования и проверки размера
+  const etag = res.headers.get('etag') || null;
+  const lastModified = res.headers.get('last-modified') || null;
+  let size = null;
+  const cr = res.headers.get('content-range'); // bytes 0-63/1234
+  if (cr) {
+    const m = /\/(\d+)\s*$/.exec(cr);
+    if (m) size = parseInt(m[1], 10);
+  } else if (res.status === 200) {
+    const cl = parseInt(res.headers.get('content-length') || '', 10);
+    if (!isNaN(cl)) size = cl;
+  }
+
   try {
     const reader = res.body.getReader();
     const chunks = [];
@@ -166,7 +183,7 @@ async function probeMedia(url) {
     try { await reader.cancel(); } catch (e) {}
     const buf = Buffer.concat(chunks).subarray(0, 64);
     if (buf.length < 4) return { state: 'unavailable', detail: 'empty body' };
-    return { state: 'ok', format: sniffFormat(buf) };
+    return { state: 'ok', format: sniffFormat(buf), etag: etag, lastModified: lastModified, size: size };
   } catch (e) {
     return { state: 'unavailable', detail: describeError(e) };
   }
@@ -204,9 +221,10 @@ async function fetchMetadata(slug) {
   return { state: 'ok', json: json };
 }
 
-/* ---------- Кэш ---------- */
+/* ---------- Кэш и объединение одновременных запросов ---------- */
 
-const cache = new Map();
+const cache = new Map();     // slug -> { at, ttl, data }
+const inflight = new Map();  // slug -> Promise
 
 function cacheGet(slug) {
   const hit = cache.get(slug);
@@ -225,7 +243,7 @@ function cacheSet(slug, data, ttl) {
   cache.set(slug, { at: Date.now(), ttl: ttl, data: data });
 }
 
-/* ---------- Публичные функции ---------- */
+/* ---------- Определение анимации ---------- */
 
 function slugFrom(input) {
   const link = parseNftLink('https://t.me/nft/' + String(input || ''));
@@ -235,29 +253,38 @@ function slugFrom(input) {
   return link.slug;
 }
 
-function buildMedia(slug, cand, format) {
-  const info = FORMAT_INFO[format];
+function buildMedia(slug, cand, probe) {
+  const info = FORMAT_INFO[probe.format];
   return {
     kind: info.kind,
-    format: format,
+    format: probe.format,
     mime: info.mime,
     field: cand.key,
     source: cand.source,
     originalUrl: cand.url,
+    etag: probe.etag || null,
+    lastModified: probe.lastModified || null,
+    size: probe.size === undefined ? null : probe.size,
     // Lottie отдаём через наш сервер (без CORS); видео и GIF — напрямую по проверенному URL
     url: info.kind === 'lottie' ? '/api/nft-media?slug=' + encodeURIComponent(slug) : cand.url
   };
 }
 
-// Возвращает { slug, animation: { available, kind, format, source, reason, detail }, media | null, debug }
-async function getNftAnimation(slugInput) {
-  const slug = slugFrom(slugInput);
-
-  const cached = cacheGet(slug);
-  if (cached) return cached;
-
+// Никогда не бросает. Возвращает { result, ttl }
+async function computeAnimation(slug) {
   const debug = { metadata: { state: null, detail: null, keys: [] }, candidates: [] };
   let transient = false;
+
+  const patternUrl = 'https://nft.fragment.com/gift/' + slug.toLowerCase() + '.lottie.json';
+  const probes = new Map();
+  function getProbe(url) {
+    if (!probes.has(url)) probes.set(url, probeMedia(url));
+    return probes.get(url);
+  }
+
+  // Спекулятивно: проверка документированного адреса идёт параллельно с загрузкой метаданных.
+  // Если метаданные укажут тот же адрес, повторный запрос не нужен.
+  getProbe(patternUrl);
 
   const metaRes = await fetchMetadata(slug);
   debug.metadata.state = metaRes.state;
@@ -267,18 +294,25 @@ async function getNftAnimation(slugInput) {
 
   // Проверка одного кандидата: реальный формат определяется по содержимому
   async function evaluate(cand) {
-    const p = await probeMedia(cand.url);
+    const p = await getProbe(cand.url);
     debug.candidates.push({
       field: cand.key,
       source: cand.source,
       url: cand.url,
       state: p.state,
       format: p.format || null,
+      size: p.size === undefined ? null : p.size,
       detail: p.detail || null
     });
     if (p.state === 'unavailable') transient = true;
     if (p.state !== 'ok') return { ok: false, reason: 'MEDIA_UNAVAILABLE', detail: p.detail || null };
-    if (FORMAT_INFO[p.format]) return { ok: true, media: buildMedia(slug, cand, p.format) };
+    const info = FORMAT_INFO[p.format];
+    if (info) {
+      if (info.kind === 'lottie' && p.size !== null && p.size > MAX_MEDIA_BYTES) {
+        return { ok: false, reason: 'MEDIA_UNAVAILABLE', detail: 'file too large' };
+      }
+      return { ok: true, media: buildMedia(slug, cand, p) };
+    }
     if (p.format === 'png' || p.format === 'jpeg' || p.format === 'webp') {
       return { ok: false, reason: 'STATIC_IMAGE_ONLY', detail: p.format };
     }
@@ -306,11 +340,7 @@ async function getNftAnimation(slugInput) {
 
   // 2) Если в метаданных ссылок нет — документированный адрес <slug>.lottie.json
   if (!media && metaCands.length === 0) {
-    const r = await evaluate({
-      key: 'documented-pattern',
-      source: 'documented-pattern',
-      url: 'https://nft.fragment.com/gift/' + slug.toLowerCase() + '.lottie.json'
-    });
+    const r = await evaluate({ key: 'documented-pattern', source: 'documented-pattern', url: patternUrl });
     if (r.ok) media = r.media;
   }
 
@@ -342,14 +372,37 @@ async function getNftAnimation(slugInput) {
     };
   }
 
-  cacheSet(slug, result, transient ? FAIL_TTL_MS : OK_TTL_MS);
-  return result;
+  const ttl = media ? SUCCESS_TTL_MS : (transient ? TRANSIENT_TTL_MS : NEGATIVE_TTL_MS);
+  return { result: result, ttl: ttl };
 }
 
-// Отдаёт Lottie JSON из проверенного URL источника для этого slug
-async function getAnimationFile(slugInput) {
-  const info = await getNftAnimation(slugInput);
-  const media = info.media;
+// Возвращает { slug, animation: { available, kind, format, source, reason, detail }, media | null, debug }
+async function getNftAnimation(slugInput) {
+  const slug = slugFrom(slugInput);
+
+  const cached = cacheGet(slug);
+  if (cached) return cached;
+
+  let p = inflight.get(slug);
+  if (!p) {
+    p = computeAnimation(slug)
+      .then(function (r) {
+        cacheSet(slug, r.result, r.ttl);
+        return r.result;
+      })
+      .finally(function () {
+        inflight.delete(slug);
+      });
+    inflight.set(slug, p);
+  }
+  return p;
+}
+
+/* ---------- Файл анимации (поток) ---------- */
+
+// Открывает поток Lottie-файла по проверенному media. В память целиком не читает.
+// Возвращает { body: ReadableStream (web), etag, lastModified }
+async function openAnimationFile(media) {
   if (!media || media.kind !== 'lottie' || !isAllowedMediaUrl(media.originalUrl)) {
     throw new NftError('NO_ANIMATION', 'Анимация недоступна / Animation is not available', 404);
   }
@@ -378,26 +431,15 @@ async function getAnimationFile(slugInput) {
     await discard(res);
     throw new NftError('MEDIA_ERROR', 'Файл анимации слишком большой / Animation file too large', 502);
   }
-
-  let buf;
-  try {
-    buf = Buffer.from(await res.arrayBuffer());
-  } catch (e) {
-    throw new NftError('MEDIA_ERROR', 'Ошибка чтения медиа / Failed to read media', 502);
-  }
-  if (buf.length > MAX_MEDIA_BYTES) {
-    throw new NftError('MEDIA_ERROR', 'Файл анимации слишком большой / Animation file too large', 502);
+  if (!res.body) {
+    throw new NftError('MEDIA_ERROR', 'Пустой ответ источника / Empty response from source', 502);
   }
 
-  // Полная проверка: это Lottie JSON (есть массив layers)
-  try {
-    const j = JSON.parse(buf.toString('utf8').replace(/^\uFEFF/, ''));
-    if (!j || typeof j !== 'object' || !Array.isArray(j.layers)) throw new Error('not lottie');
-  } catch (e) {
-    throw new NftError('UNSUPPORTED_FORMAT', 'Неподдерживаемый формат анимации / Unsupported animation format', 502);
-  }
-
-  return { body: buf, contentType: 'application/json; charset=utf-8' };
+  return {
+    body: res.body,
+    etag: res.headers.get('etag') || null,
+    lastModified: res.headers.get('last-modified') || null
+  };
 }
 
-module.exports = { getNftAnimation, getAnimationFile };
+module.exports = { getNftAnimation, openAnimationFile, MAX_MEDIA_BYTES };

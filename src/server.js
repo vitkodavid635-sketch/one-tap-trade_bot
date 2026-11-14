@@ -2,7 +2,8 @@
 
 const path = require('path');
 const express = require('express');
-const { getNft, getNftMedia, NftError } = require('./nft');
+const { getNft, NftError } = require('./nft');
+const { getNftAnimation, getAnimationFile } = require('./animation');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,7 +13,7 @@ app.use(express.json({ limit: '10kb' }));
 
 /* ---------- Простой лимит запросов (на IP, в памяти) ---------- */
 const RATE_WINDOW_MS = 60 * 1000;
-const RATE_MAX = 120; // на одну загрузку пары NFT уходит до 4 запросов (2 данные + 2 анимации)
+const RATE_MAX = 120; // на одну загрузку пары NFT уходит до 6 запросов
 const hits = new Map();
 
 function rateLimit(req, res, next) {
@@ -53,7 +54,7 @@ function sendError(res, e) {
   });
 }
 
-/* ---------- Данные NFT ---------- */
+/* ---------- Данные NFT (прежняя логика, без анимации) ---------- */
 async function nftHandler(req, res) {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const link = body.url || body.link || req.query.url || req.query.link;
@@ -65,10 +66,27 @@ async function nftHandler(req, res) {
   }
 }
 
-/* ---------- Файл анимации (Lottie JSON) ---------- */
+/* ---------- Анимация: отдельный необязательный слой ---------- */
+// Всегда отвечает ok:true, если slug корректный. Проблемы источника — в animation.reason.
+async function animationHandler(req, res) {
+  try {
+    const r = await getNftAnimation(req.query.slug);
+    const m = r.media;
+    res.json({
+      ok: true,
+      slug: r.slug,
+      animation: r.animation,
+      media: m ? { kind: m.kind, format: m.format, mime: m.mime, url: m.url } : null
+    });
+  } catch (e) {
+    sendError(res, e);
+  }
+}
+
+// Файл Lottie-анимации (через наш сервер, адрес берётся из проверенных метаданных, не из запроса)
 async function mediaHandler(req, res) {
   try {
-    const file = await getNftMedia(req.query.slug);
+    const file = await getAnimationFile(req.query.slug);
     res.set({
       'Content-Type': file.contentType,
       'Cache-Control': 'public, max-age=300',
@@ -90,6 +108,7 @@ app.post('/api/nft', rateLimit, nftHandler);
 app.get('/api/validate-nft', rateLimit, nftHandler);
 app.post('/api/validate-nft', rateLimit, nftHandler);
 
+app.get('/api/nft-animation', rateLimit, animationHandler);
 app.get('/api/nft-media', rateLimit, mediaHandler);
 
 app.use('/api', (req, res) => {

@@ -2,11 +2,11 @@
   'use strict';
 
   /* ---------- Настройки ---------- */
-  var API_ENDPOINT = '/api/validate-nft';
-  var API_METHOD = 'POST';          // 'POST' (JSON) или 'GET' (?url=...)
+  var API_ENDPOINT = '/api/validate-nft';      // существующая загрузка NFT
   var ANIMATION_ENDPOINT = '/api/nft-animation';
+  var OFFERS_ENDPOINT = '/api/offers';
   var REQUEST_TIMEOUT_MS = 20000;
-  var MEDIA_TIMEOUT_MS = 12000;     // сколько ждём старта анимации, затем остаётся статичное изображение
+  var MEDIA_TIMEOUT_MS = 12000;                // сколько ждём старта анимации, затем остаётся статичное изображение
   var LANG_KEY = 'ott_lang';
   var LOTTIE_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js';
   var IMAGE_KEYS = ['image', 'imageUrl', 'image_url', 'imageURL', 'preview', 'previewUrl', 'preview_url', 'thumbnail', 'picture', 'img'];
@@ -14,74 +14,116 @@
   /* ---------- Тексты ---------- */
   var I18N = {
     ru: {
-      myNft: 'Мой NFT',
-      partnerNft: 'NFT партнёра',
-      username: 'Telegram username владельца',
+      heroFoot: 'Telegram NFT · 1 на 1',
+      homeDesc: 'Обменивайтесь Telegram NFT один на один: создайте предложение и отправьте его партнёру.',
+      createDeal: 'СОЗДАТЬ СДЕЛКУ',
+      createTitle: 'Новая сделка',
+      yourNft: 'ВАШ NFT',
+      partnerNft: 'NFT ПАРТНЁРА',
+      yourUsername: 'Ваш Telegram username',
       partnerUsername: 'Telegram username партнёра',
       nftLink: 'Ссылка на NFT',
-      phUsername: '@username',
-      load: 'ЗАГРУЗИТЬ NFT',
-      loading: 'ЗАГРУЗКА…',
+      confirm: 'ПОДТВЕРДИТЬ',
+      confirming: 'ЗАГРУЖАЕМ NFT…',
+      creating: 'СОЗДАЁМ ПРЕДЛОЖЕНИЕ…',
       errUsernameEmpty: 'Введите Telegram username.',
       errUsernameFormat: 'Username: 5–32 символа, латиница, цифры и «_», начинается с буквы.',
+      errSameUser: 'Укажите двух разных пользователей.',
       errLinkEmpty: 'Вставьте ссылку на NFT.',
-      errLinkFormat: 'Неверная ссылка. Пример: https://t.me/nft/BDayCandle-202879',
-      errSameLink: 'Ссылки на NFT должны быть разными.',
-      fixFields: 'Исправьте отмеченные поля.',
-      checking: 'Проверяем ссылки и загружаем NFT…',
-      success: 'Оба NFT загружены.',
-      errNetwork: 'Не удалось связаться с сервером. Проверьте соединение и повторите.',
-      errTimeout: 'Сервер не ответил вовремя. Повторите попытку.',
-      errServer: 'Сервер вернул ошибку',
-      errBadResponse: 'Сервер вернул непонятный ответ.',
-      errNoImage: 'Сервер не вернул изображение для этого NFT. Для загрузки нужен серверный метод получения метаданных.',
+      errLinkFormat: 'Нужна ссылка вида t.me/nft/Название-123456.',
+      errSameLink: 'Нужны две разные NFT.',
+      errNftNotFound: 'NFT не найден. Проверьте ссылку.',
+      errNftNoImage: 'У этого NFT не удалось получить изображение.',
+      errNftUnavailable: 'Данные NFT сейчас недоступны. Повторите позже.',
       errImageLoad: 'Не удалось загрузить изображение NFT.',
-      errPartial: 'Не все NFT удалось загрузить.',
-      animOn: '● Оригинальная анимация',
-      animFallback: 'Анимация получена, но не воспроизводится — показано статичное изображение.',
-      animMeta: 'Сервер не смог получить данные анимации у источника — показано статичное изображение.',
-      animNone: 'Источник не подтверждает анимацию для этого NFT — показано статичное изображение.',
-      animStatic: 'Источник вернул только статичное изображение.',
-      animUnsupported: 'Формат анимации не поддерживается — показано статичное изображение.',
-      animMedia: 'Сервер не смог загрузить файл анимации — показано статичное изображение.',
-      animEndpoint: 'Не удалось запросить анимацию у сервера — показано статичное изображение.'
+      errNftLoad: 'Не все NFT удалось загрузить — сделка не создана.',
+      fixFields: 'Исправьте отмеченные поля.',
+      errCreate: 'Не удалось создать предложение. Повторите попытку.',
+      errRate: 'Слишком много запросов. Подождите минуту.',
+      errNetwork: 'Не удалось связаться с сервером. Проверьте соединение.',
+      errTimeout: 'Сервер не ответил вовремя. Повторите попытку.',
+      errServer: 'Сервер вернул ошибку.',
+      errBadResponse: 'Сервер вернул непонятный ответ.',
+      offerTitle: 'ПРЕДЛОЖЕНИЕ',
+      statusActive: 'АКТИВНО',
+      statusExpired: 'ИСТЕКЛО',
+      statusLoading: 'ЗАГРУЗКА',
+      offerLoading: 'Загружаем предложение…',
+      offerSentence: 'Пользователь @{u1} предлагает совершить обмен NFT {n1} на NFT {n2}.',
+      offerActive: 'Предложение активно ещё:',
+      offerExpired: 'Предложение недействительно',
+      share: 'ПОДЕЛИТЬСЯ',
+      shareUntil: 'Предложение действует до {time}.',
+      newDeal: 'Создать новую сделку',
+      toHome: 'На главную',
+      imgFail: 'Изображение недоступно',
+      errOfferNotFound: 'Предложение не найдено. Возможно, ссылка неверна или оно было удалено.',
+      errOfferLoad: 'Не удалось загрузить предложение.',
+      animFallback: 'анимация получена, но не воспроизводится — показано статичное изображение',
+      animMeta: 'сервер не смог получить данные анимации у источника — показано статичное изображение',
+      animNone: 'источник не подтверждает анимацию — показано статичное изображение',
+      animStatic: 'источник вернул только статичное изображение',
+      animUnsupported: 'формат анимации не поддерживается — показано статичное изображение',
+      animMedia: 'сервер не смог загрузить файл анимации — показано статичное изображение',
+      animEndpoint: 'не удалось запросить анимацию у сервера — показано статичное изображение'
     },
     en: {
-      myNft: 'My NFT',
-      partnerNft: "Partner's NFT",
-      username: "Owner's Telegram username",
+      heroFoot: 'Telegram NFT · one-to-one',
+      homeDesc: 'Swap Telegram NFTs one-to-one: create an offer and send it to your partner.',
+      createDeal: 'CREATE DEAL',
+      createTitle: 'New deal',
+      yourNft: 'YOUR NFT',
+      partnerNft: "PARTNER'S NFT",
+      yourUsername: 'Your Telegram username',
       partnerUsername: "Partner's Telegram username",
       nftLink: 'NFT link',
-      phUsername: '@username',
-      load: 'LOAD NFT',
-      loading: 'LOADING…',
+      confirm: 'CONFIRM',
+      confirming: 'LOADING NFTs…',
+      creating: 'CREATING OFFER…',
       errUsernameEmpty: 'Enter a Telegram username.',
       errUsernameFormat: 'Username: 5–32 chars, Latin letters, digits and "_", must start with a letter.',
+      errSameUser: 'Enter two different users.',
       errLinkEmpty: 'Paste the NFT link.',
-      errLinkFormat: 'Invalid link. Example: https://t.me/nft/BDayCandle-202879',
-      errSameLink: 'The NFT links must be different.',
-      fixFields: 'Please fix the highlighted fields.',
-      checking: 'Checking links and loading NFTs…',
-      success: 'Both NFTs loaded.',
-      errNetwork: 'Could not reach the server. Check your connection and try again.',
-      errTimeout: 'The server did not respond in time. Try again.',
-      errServer: 'Server returned an error',
-      errBadResponse: 'The server returned an unexpected response.',
-      errNoImage: 'The server did not return an image for this NFT. Loading requires a server-side metadata method.',
+      errLinkFormat: 'Use a link like t.me/nft/Name-123456.',
+      errSameLink: 'The two NFTs must be different.',
+      errNftNotFound: 'NFT not found. Check the link.',
+      errNftNoImage: 'Could not get an image for this NFT.',
+      errNftUnavailable: 'NFT data is unavailable right now. Try again later.',
       errImageLoad: 'Failed to load the NFT image.',
-      errPartial: 'Not all NFTs could be loaded.',
-      animOn: '● Original animation',
-      animFallback: 'Animation received but cannot be played — showing the static image.',
-      animMeta: 'The server could not get animation data from the source — showing the static image.',
-      animNone: 'The source does not confirm an animation for this NFT — showing the static image.',
-      animStatic: 'The source returned only a static image.',
-      animUnsupported: 'Animation format is not supported — showing the static image.',
-      animMedia: 'The server could not load the animation file — showing the static image.',
-      animEndpoint: 'Could not request the animation from the server — showing the static image.'
+      errNftLoad: 'Not all NFTs could be loaded — the deal was not created.',
+      fixFields: 'Please fix the highlighted fields.',
+      errCreate: 'Could not create the offer. Please try again.',
+      errRate: 'Too many requests. Wait a minute.',
+      errNetwork: 'Could not reach the server. Check your connection.',
+      errTimeout: 'The server did not respond in time. Try again.',
+      errServer: 'The server returned an error.',
+      errBadResponse: 'The server returned an unexpected response.',
+      offerTitle: 'OFFER',
+      statusActive: 'ACTIVE',
+      statusExpired: 'EXPIRED',
+      statusLoading: 'LOADING',
+      offerLoading: 'Loading the offer…',
+      offerSentence: 'User @{u1} offers to swap NFT {n1} for NFT {n2}.',
+      offerActive: 'Offer is active for another:',
+      offerExpired: 'This offer is no longer valid',
+      share: 'SHARE',
+      shareUntil: 'The offer is valid until {time}.',
+      newDeal: 'Create a new deal',
+      toHome: 'Home',
+      imgFail: 'Image unavailable',
+      errOfferNotFound: 'Offer not found. The link may be wrong or the offer was removed.',
+      errOfferLoad: 'Could not load the offer.',
+      animFallback: 'animation received but cannot be played — showing the static image',
+      animMeta: 'the server could not get animation data from the source — showing the static image',
+      animNone: 'the source does not confirm an animation — showing the static image',
+      animStatic: 'the source returned only a static image',
+      animUnsupported: 'animation format is not supported — showing the static image',
+      animMedia: 'the server could not load the animation file — showing the static image',
+      animEndpoint: 'could not request the animation from the server — showing the static image'
     }
   };
 
-  // Причина от сервера -> ключ заметки под карточкой
+  // Причина от сервера -> ключ заметки
   var REASON_NOTE = {
     METADATA_UNAVAILABLE: 'animMeta',
     NO_ANIMATION_IN_METADATA: 'animNone',
@@ -90,8 +132,25 @@
     MEDIA_UNAVAILABLE: 'animMedia'
   };
 
+  // Код ошибки сервера -> ключ текста
+  var SERVER_CODE_KEY = {
+    NFT_NOT_FOUND: 'errNftNotFound',
+    IMAGE_MISSING: 'errNftNoImage',
+    DATA_UNAVAILABLE: 'errNftUnavailable',
+    FETCH_ERROR: 'errNftUnavailable',
+    FETCH_TIMEOUT: 'errNftUnavailable',
+    INVALID_LINK: 'errLinkFormat',
+    INVALID_USERNAME: 'errUsernameFormat',
+    SAME_USER: 'errSameUser',
+    SAME_NFT: 'errSameLink',
+    RATE_LIMITED: 'errRate',
+    STORE_ERROR: 'errCreate'
+  };
+
   var USERNAME_RE = /^[A-Za-z][A-Za-z0-9_]{4,31}$/;
-  var NFT_LINK_RE = /^https:\/\/t\.me\/nft\/([A-Za-z0-9]+)-(\d+)$/;
+  // t.me/nft/Name-123 и https://t.me/nft/Name-123; другие домены не принимаются
+  var NFT_LINK_RE = /^(?:https?:\/\/)?t\.me\/nft\/([A-Za-z0-9]+)-(\d+)\/?(?:[?#].*)?$/i;
+  var OFFER_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
   var lang = 'ru';
   try {
@@ -99,29 +158,58 @@
     if (saved === 'ru' || saved === 'en') lang = saved;
   } catch (e) {}
 
-  var busy = false;
-
   /* ---------- Утилиты ---------- */
   function $(id) { return document.getElementById(id); }
   function t(key) { return (I18N[lang] && I18N[lang][key]) || key; }
+  function fmt(str, vars) {
+    return String(str).replace(/\{(\w+)\}/g, function (m, k) { return vars[k] !== undefined ? vars[k] : m; });
+  }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
-  var el = {
-    langRu: $('langRu'), langEn: $('langEn'),
-    myUsername: $('myUsername'), myNftLink: $('myNftLink'),
-    partnerUsername: $('partnerUsername'), partnerNftLink: $('partnerNftLink'),
-    loadBtn: $('loadBtn'), loadBtnText: $('loadBtnText'),
-    status: $('status'), results: $('results')
+  var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+
+  var state = {
+    screen: 'home',
+    offer: null,
+    skew: 0,
+    timerId: null,
+    busy: false,
+    busyKey: null,
+    offerView: 'ready'
   };
 
-  var fieldErrKeys = {};
-  var statusKey = null;
-  var cardErrKeys = { my: null, partner: null };
-  var noteState = { my: { key: null, detail: null }, partner: { key: null, detail: null } };
+  var el = {
+    root: $('appRoot'),
+    langRu: $('langRu'), langEn: $('langEn'),
+    backBtn: $('backBtn'),
+    createDealBtn: $('createDealBtn'),
+    confirmBtn: $('confirmBtn'), confirmBtnText: $('confirmBtnText'),
+    createStatus: $('createStatus'),
+    shareBtn: $('shareBtn'), newDealBtn: $('newDealBtn'),
+    offerCard: $('offerCard'), offerStatus: $('offerStatus'),
+    offerSentence: $('offerSentence'), offerTimerLabel: $('offerTimerLabel'), offerTime: $('offerTime'),
+    offerNotes: $('offerNotes'), offerWrap: $('offerWrap'),
+    offerError: $('offerError'), offerErrorText: $('offerErrorText'), offerErrorBtn: $('offerErrorBtn'),
+    offerActions: $('offerActions')
+  };
 
-  function noteText(prefix) {
-    var n = noteState[prefix];
+  var FIELDS = ['myUsername', 'myNftLink', 'partnerUsername', 'partnerNftLink'];
+  var fieldErrKeys = {};
+  var createStatusKey = null;
+  var offerErrorKey = null;
+  var slotFailed = { n1: false, n2: false };
+  var noteState = { n1: { key: null, detail: null }, n2: { key: null, detail: null } };
+
+  function noteText(p) {
+    var n = noteState[p];
     if (!n.key) return '';
     return t(n.key) + (n.detail ? ' (' + n.detail + ')' : '');
+  }
+
+  /* ---------- Высота и безопасные области Telegram Mini App ---------- */
+  function setAppHeight() {
+    var h = (tg && tg.viewportStableHeight) || window.innerHeight;
+    if (h) document.documentElement.style.setProperty('--app-h', Math.round(h) + 'px');
   }
 
   /* ---------- Язык ---------- */
@@ -129,28 +217,26 @@
     document.documentElement.lang = lang;
     var nodes = document.querySelectorAll('[data-i18n]');
     for (var i = 0; i < nodes.length; i++) {
-      var k = nodes[i].getAttribute('data-i18n');
-      if (nodes[i] === el.loadBtnText && busy) continue;
-      nodes[i].textContent = t(k);
-    }
-    var phs = document.querySelectorAll('[data-i18n-placeholder]');
-    for (var j = 0; j < phs.length; j++) {
-      phs[j].setAttribute('placeholder', t(phs[j].getAttribute('data-i18n-placeholder')));
+      if (nodes[i] === el.confirmBtnText && state.busy) continue;
+      nodes[i].textContent = t(nodes[i].getAttribute('data-i18n'));
     }
     el.langRu.classList.toggle('active', lang === 'ru');
     el.langEn.classList.toggle('active', lang === 'en');
     el.langRu.setAttribute('aria-pressed', lang === 'ru');
     el.langEn.setAttribute('aria-pressed', lang === 'en');
-    if (busy) el.loadBtnText.textContent = t('loading');
+    if (state.busy && state.busyKey) el.confirmBtnText.textContent = t(state.busyKey);
 
-    Object.keys(fieldErrKeys).forEach(function (id) {
+    FIELDS.forEach(function (id) {
       if (fieldErrKeys[id]) $(id + 'Err').textContent = t(fieldErrKeys[id]);
     });
-    if (statusKey) el.status.textContent = t(statusKey);
-    ['my', 'partner'].forEach(function (p) {
-      if (cardErrKeys[p]) $(p + 'NftFail').textContent = t(cardErrKeys[p]);
-      if (noteState[p].key) $(p + 'NftNote').textContent = noteText(p);
+    if (createStatusKey) el.createStatus.textContent = t(createStatusKey);
+    if (offerErrorKey) el.offerErrorText.textContent = t(offerErrorKey);
+
+    ['n1', 'n2'].forEach(function (p) {
+      if (slotFailed[p]) $(p + 'Fail').textContent = t('imgFail');
     });
+    renderOfferTexts();
+    refreshOfferNotes();
   }
 
   function setLang(l) {
@@ -160,72 +246,93 @@
     applyLang();
   }
 
-  /* ---------- Статус ---------- */
-  function showStatus(kind, key, extra) {
-    statusKey = extra ? null : key;
-    el.status.className = 'status show ' + kind;
-    el.status.textContent = extra ? t(key) + ': ' + extra : t(key);
-  }
-  function hideStatus() {
-    statusKey = null;
-    el.status.className = 'status';
-    el.status.textContent = '';
-  }
-
-  /* ---------- Ошибки полей ---------- */
-  function setFieldError(id, key) {
-    var field = $(id + 'Field');
-    var err = $(id + 'Err');
-    fieldErrKeys[id] = key || null;
-    if (key) {
-      field.classList.add('invalid');
-      err.textContent = t(key);
-    } else {
-      field.classList.remove('invalid');
-      err.textContent = '';
-    }
-  }
-  function clearAllFieldErrors() {
-    ['myUsername', 'myNftLink', 'partnerUsername', 'partnerNftLink'].forEach(function (id) {
-      setFieldError(id, null);
+  /* ---------- Навигация ---------- */
+  function go(screen) {
+    state.screen = screen;
+    el.root.setAttribute('data-screen', screen);
+    ['Home', 'Create', 'Offer'].forEach(function (s) {
+      $('screen' + s).classList.toggle('active', s.toLowerCase() === screen);
     });
+    if (screen !== 'offer') stopTimer();
+    try { window.scrollTo(0, 0); } catch (e) {}
   }
 
-  /* ---------- Валидация ---------- */
+  function clearOfferParam() {
+    try {
+      var hash = location.hash || '';
+      history.replaceState(null, '', location.pathname + hash);
+    } catch (e) {}
+  }
+
+  /* ---------- Ссылки и валидация ---------- */
+  function normalizeNftLink(v) {
+    var m = NFT_LINK_RE.exec(String(v || '').trim());
+    return m ? 'https://t.me/nft/' + m[1] + '-' + m[2] : null; // https:// добавляется автоматически, поле не меняется
+  }
+  function slugOf(link) {
+    var m = /\/nft\/(.+)$/.exec(link);
+    return m ? m[1] : null;
+  }
   function normalizeUsername(v) {
     return String(v || '').trim().replace(/^@+/, '');
   }
 
-  function validateForm() {
+  function setFieldError(id, key) {
+    var field = $(id + 'Field');
+    fieldErrKeys[id] = key || null;
+    field.classList.toggle('invalid', !!key);
+    $(id + 'Err').textContent = key ? t(key) : '';
+  }
+  function clearFieldErrors() {
+    FIELDS.forEach(function (id) { setFieldError(id, null); });
+  }
+
+  function showCreateStatus(kind, key) {
+    createStatusKey = key;
+    el.createStatus.className = 'status show ' + kind;
+    el.createStatus.textContent = t(key);
+  }
+  function hideCreateStatus() {
+    createStatusKey = null;
+    el.createStatus.className = 'status';
+    el.createStatus.textContent = '';
+  }
+
+  function validateCreateForm() {
     var ok = true;
-    var data = {
-      myUsername: normalizeUsername(el.myUsername.value),
-      partnerUsername: normalizeUsername(el.partnerUsername.value),
-      myLink: String(el.myNftLink.value || '').trim(),
-      partnerLink: String(el.partnerNftLink.value || '').trim()
+    var d = {
+      myUsername: normalizeUsername($('myUsername').value),
+      partnerUsername: normalizeUsername($('partnerUsername').value),
+      myLink: normalizeNftLink($('myNftLink').value),
+      partnerLink: normalizeNftLink($('partnerNftLink').value)
     };
 
-    function checkUser(id, v) {
+    function user(id, v) {
       if (!v) { setFieldError(id, 'errUsernameEmpty'); ok = false; }
       else if (!USERNAME_RE.test(v)) { setFieldError(id, 'errUsernameFormat'); ok = false; }
-      else setFieldError(id, null);
     }
-    function checkLink(id, v) {
-      if (!v) { setFieldError(id, 'errLinkEmpty'); ok = false; }
-      else if (!NFT_LINK_RE.test(v)) { setFieldError(id, 'errLinkFormat'); ok = false; }
-      else setFieldError(id, null);
+    function link(id, raw, norm) {
+      if (!String(raw || '').trim()) { setFieldError(id, 'errLinkEmpty'); ok = false; }
+      else if (!norm) { setFieldError(id, 'errLinkFormat'); ok = false; }
     }
 
-    checkUser('myUsername', data.myUsername);
-    checkLink('myNftLink', data.myLink);
-    checkUser('partnerUsername', data.partnerUsername);
-    checkLink('partnerNftLink', data.partnerLink);
+    user('myUsername', d.myUsername);
+    user('partnerUsername', d.partnerUsername);
+    link('myNftLink', $('myNftLink').value, d.myLink);
+    link('partnerNftLink', $('partnerNftLink').value, d.partnerLink);
 
-    if (ok && data.myLink.toLowerCase() === data.partnerLink.toLowerCase()) {
+    if (ok && d.myUsername.toLowerCase() === d.partnerUsername.toLowerCase()) {
+      setFieldError('partnerUsername', 'errSameUser');
+      ok = false;
+    }
+    if (ok && d.myLink.toLowerCase() === d.partnerLink.toLowerCase()) {
       setFieldError('partnerNftLink', 'errSameLink');
       ok = false;
     }
-    return ok ? data : null;
+    if (!ok) return null;
+    d.mySlug = slugOf(d.myLink);
+    d.partnerSlug = slugOf(d.partnerLink);
+    return d;
   }
 
   /* ---------- Сеть ---------- */
@@ -240,22 +347,42 @@
     );
   }
 
-  // Получение NFT — прежняя логика, анимация здесь не участвует
-  function requestNft(link, username) {
-    var opts, url = API_ENDPOINT;
-    if (API_METHOD === 'GET') {
-      url += '?url=' + encodeURIComponent(link) + '&link=' + encodeURIComponent(link) +
-             '&username=' + encodeURIComponent(username);
-      opts = { method: 'GET', headers: { 'Accept': 'application/json' } };
-    } else {
-      opts = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ url: link, link: link, username: username })
-      };
-    }
-
+  // Универсальный запрос JSON API (предложения)
+  function apiJson(url, opts) {
     return fetchWithTimeout(url, opts).then(function (res) {
+      return res.text().then(function (text) {
+        var json = null;
+        try { json = text ? JSON.parse(text) : null; } catch (e) {}
+        if (!json || typeof json !== 'object') {
+          var e1 = new Error('bad response');
+          e1.code = 'bad';
+          throw e1;
+        }
+        if (!res.ok || json.ok === false) {
+          var e2 = new Error(String(json.error || 'HTTP ' + res.status));
+          e2.code = 'server';
+          e2.serverCode = json.code || null;
+          e2.errors = json.errors || null;
+          e2.which = json.which || null;
+          throw e2;
+        }
+        return json;
+      });
+    }, function (e) {
+      var err = new Error(e && e.name === 'AbortError' ? 'timeout' : 'network');
+      err.code = e && e.name === 'AbortError' ? 'timeout' : 'network';
+      throw err;
+    });
+  }
+
+  // Существующая загрузка NFT (/api/validate-nft)
+  function requestNft(link, username) {
+    var opts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ url: link, link: link, username: username || '' })
+    };
+    return fetchWithTimeout(API_ENDPOINT, opts).then(function (res) {
       return res.text().then(function (text) {
         var json = null;
         try { json = text ? JSON.parse(text) : null; } catch (e) {}
@@ -263,6 +390,7 @@
           var msg = (json && (json.error || json.message)) || ('HTTP ' + res.status);
           var err = new Error(typeof msg === 'string' ? msg : 'HTTP ' + res.status);
           err.code = 'server';
+          err.serverCode = json && json.code ? json.code : null;
           throw err;
         }
         if (!json || typeof json !== 'object') {
@@ -273,6 +401,7 @@
         if (json.ok === false || json.valid === false || json.success === false) {
           var e3 = new Error(String(json.error || json.message || 'invalid'));
           e3.code = 'server';
+          e3.serverCode = json.code || null;
           throw e3;
         }
         return { slug: json.slug || null, imageUrl: extractImage(json), raw: json };
@@ -324,6 +453,15 @@
     });
   }
 
+  // Ключ текста ошибки по ошибке запроса
+  function errKeyFor(e) {
+    if (e && e.serverCode && SERVER_CODE_KEY[e.serverCode]) return SERVER_CODE_KEY[e.serverCode];
+    if (e && e.code === 'network') return 'errNetwork';
+    if (e && e.code === 'timeout') return 'errTimeout';
+    if (e && e.code === 'bad') return 'errBadResponse';
+    return 'errServer';
+  }
+
   // Запрос анимации — отдельный слой. НИКОГДА не отклоняется и не влияет на загрузку NFT.
   // Возвращает { media: {kind,url}|null, noteKey, detail }
   function requestAnimation(slug) {
@@ -352,10 +490,26 @@
       });
   }
 
+  // Кэш запросов анимации в рамках сессии (на экране создания запрос стартует заранее)
+  var animCache = {};
+  function animFor(slug) {
+    if (!animCache[slug]) {
+      animCache[slug] = requestAnimation(slug).then(function (a) {
+        if (!a.media) delete animCache[slug]; // неудачи не запоминаем
+        return a;
+      });
+    }
+    return animCache[slug];
+  }
+
   /* ---------- Анимация ---------- */
   var lottiePromise = null;
-  var anims = { my: null, partner: null };
-  var cardToken = { my: 0, partner: 0 };
+  var anims = { n1: null, n2: null };
+  var slotToken = { n1: 0, n2: 0 };
+
+  function E(p) {
+    return { slot: $(p + 'Slot'), img: $(p + 'Img'), media: $(p + 'Media'), sk: $(p + 'Sk'), fail: $(p + 'Fail') };
+  }
 
   function loadLottieLib() {
     if (window.lottie) return Promise.resolve(window.lottie);
@@ -372,8 +526,7 @@
     return lottiePromise;
   }
 
-  // Файл Lottie запрашиваем сами, параллельно с загрузкой библиотеки.
-  // Повторные загрузки берутся из HTTP-кэша браузера (сервер отдаёт Cache-Control/ETag).
+  // Файл Lottie запрашиваем сами, параллельно с загрузкой библиотеки
   function fetchLottieData(url) {
     return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (res) {
       if (!res.ok) {
@@ -400,25 +553,26 @@
     });
   }
 
-  function teardownMedia(prefix) {
-    var box = $(prefix + 'NftMedia');
-    if (anims[prefix]) {
-      try { anims[prefix].destroy(); } catch (e) {}
-      anims[prefix] = null;
+  function teardownMedia(p) {
+    var e = E(p);
+    if (anims[p]) {
+      try { anims[p].destroy(); } catch (x) {}
+      anims[p] = null;
     }
-    var vids = box.querySelectorAll('video');
+    var vids = e.media.querySelectorAll('video');
     for (var i = 0; i < vids.length; i++) {
-      try { vids[i].pause(); vids[i].removeAttribute('src'); vids[i].load(); } catch (e) {}
+      try { vids[i].pause(); vids[i].removeAttribute('src'); vids[i].load(); } catch (x) {}
     }
-    box.innerHTML = '';
-    box.classList.remove('pending', 'on');
-    $(prefix + 'NftImage').classList.remove('hide');
+    e.media.innerHTML = '';
+    e.media.classList.remove('pending', 'on');
+    e.img.classList.remove('hide');
+    e.slot.classList.remove('live');
   }
 
   // Resolve({ok:true}) только когда анимация действительно запущена; иначе {ok:false, detail}
-  function mountMedia(prefix, media, token) {
+  function mountMedia(p, media, token) {
     return new Promise(function (resolve) {
-      var box = $(prefix + 'NftMedia');
+      var box = E(p).media;
       var done = false;
       var timer = setTimeout(function () { finish(false, 'timeout'); }, MEDIA_TIMEOUT_MS);
 
@@ -432,9 +586,8 @@
       box.classList.add('pending');
 
       if (media.kind === 'lottie') {
-        // Библиотека и файл анимации загружаются одновременно
         Promise.all([loadLottieLib(), fetchLottieData(media.url)]).then(function (r) {
-          if (done || cardToken[prefix] !== token) return finish(false, 'cancelled');
+          if (done || slotToken[p] !== token) return finish(false, 'cancelled');
           var anim;
           try {
             anim = r[0].loadAnimation({
@@ -445,15 +598,14 @@
               animationData: r[1],
               rendererSettings: { preserveAspectRatio: 'xMidYMid meet' }
             });
-          } catch (e) { return finish(false, 'lottie init'); }
-          anims[prefix] = anim;
+          } catch (x) { return finish(false, 'lottie init'); }
+          anims[p] = anim;
 
           // С animationData событие могло сработать до подписки, поэтому проверяем состояние напрямую
           var tries = 0;
           function check() {
             if (done) return;
             if (anim.isLoaded || anim.totalFrames > 0) {
-              // Одного кадра недостаточно для анимации
               if (anim.totalFrames > 1) finish(true);
               else finish(false, 'single frame');
               return;
@@ -463,8 +615,8 @@
           anim.addEventListener('DOMLoaded', check);
           anim.addEventListener('data_failed', function () { finish(false, 'lottie data failed'); });
           check();
-        }, function (e) {
-          finish(false, (e && e.detail) || 'lottie-web not loaded');
+        }, function (err) {
+          finish(false, (err && err.detail) || 'lottie-web not loaded');
         });
       } else if (media.kind === 'video') {
         // WEBM / MP4: autoplay, без звука, с повтором, inline
@@ -483,9 +635,9 @@
         box.appendChild(v);
         v.src = media.url;
         try {
-          var p = v.play();
-          if (p && p.catch) p.catch(function () {});
-        } catch (e) {}
+          var pr = v.play();
+          if (pr && pr.catch) pr.catch(function () {});
+        } catch (x) {}
       } else if (media.kind === 'gif') {
         var g = new Image();
         g.alt = '';
@@ -499,203 +651,406 @@
     });
   }
 
-  function setNote(prefix, key, cls, detail) {
-    var n = $(prefix + 'NftNote');
-    noteState[prefix] = { key: key || null, detail: detail || null };
-    n.className = 'nft-note' + (cls ? ' ' + cls : '');
-    n.textContent = key ? noteText(prefix) : '';
+  function setNote(p, key, detail) {
+    noteState[p] = { key: key || null, detail: detail || null };
+    refreshOfferNotes();
   }
 
-  // Как только анимация реально играет — плавно переключаем карточку с статичного изображения на неё
-  function startAnimation(prefix, media, token) {
-    mountMedia(prefix, media, token).then(function (r) {
-      if (cardToken[prefix] !== token) return; // карточку уже сбросили или она завершилась ошибкой
+  // Как только анимация реально играет — плавно переключаем слот со статичного изображения на неё
+  function startAnimation(p, media, token) {
+    mountMedia(p, media, token).then(function (r) {
+      if (slotToken[p] !== token) return;
+      var e = E(p);
       if (r.ok) {
-        var card = $(prefix + 'NftCard');
-        var sk = card.querySelector('.skeleton');
-        if (sk) sk.style.display = 'none';
-        $(prefix + 'NftMedia').classList.remove('pending');
-        $(prefix + 'NftMedia').classList.add('on');
-        $(prefix + 'NftImage').classList.add('hide');
-        setNote(prefix, 'animOn', 'ok', null);
+        e.sk.style.display = 'none';
+        e.media.classList.remove('pending');
+        e.media.classList.add('on');
+        e.img.classList.add('hide');
+        e.slot.classList.add('live');
+        setNote(p, null, null);
       } else {
-        teardownMedia(prefix);
-        setNote(prefix, 'animFallback', '', r.detail);
+        teardownMedia(p);
+        setNote(p, 'animFallback', r.detail);
       }
     });
   }
 
-  /* ---------- Карточки результата ---------- */
-  function resetCard(prefix) {
-    cardToken[prefix]++;
-    teardownMedia(prefix);
-    var card = $(prefix + 'NftCard');
-    var img = $(prefix + 'NftImage');
-    card.classList.remove('failed');
-    cardErrKeys[prefix] = null;
-    $(prefix + 'NftFail').textContent = '';
-    img.classList.remove('ready');
-    img.removeAttribute('src');
-    img.alt = '';
-    $(prefix + 'NftName').textContent = '';
-    $(prefix + 'NftOwner').textContent = '';
-    setNote(prefix, null, '', null);
-    var sk = card.querySelector('.skeleton');
-    if (sk) sk.style.display = '';
+  function refreshOfferNotes() {
+    var box = el.offerNotes;
+    box.textContent = '';
+    if (!state.offer) return;
+    [['n1', state.offer.nft1], ['n2', state.offer.nft2]].forEach(function (x) {
+      if (!noteState[x[0]].key) return;
+      var line = document.createElement('div');
+      line.textContent = x[1].name + ' #' + x[1].number + ': ' + noteText(x[0]);
+      box.appendChild(line);
+    });
   }
 
-  function failCard(prefix, key) {
-    // Поздний результат анимации для неудавшейся карточки не нужен
-    cardToken[prefix]++;
-    teardownMedia(prefix);
-    setNote(prefix, null, '', null);
-    cardErrKeys[prefix] = key;
-    var card = $(prefix + 'NftCard');
-    $(prefix + 'NftFail').textContent = t(key);
-    card.classList.add('failed');
+  /* ---------- Слоты NFT в карточке предложения ---------- */
+  function resetSlot(p) {
+    slotToken[p]++;
+    teardownMedia(p);
+    var e = E(p);
+    slotFailed[p] = false;
+    e.slot.classList.remove('failed');
+    e.fail.textContent = '';
+    e.img.onload = null;
+    e.img.onerror = null;
+    e.img.classList.remove('ready');
+    e.img.removeAttribute('src');
+    e.img.alt = '';
+    e.sk.style.display = '';
+    $(p + 'Name').textContent = '';
+    $(p + 'User').textContent = '';
+    noteState[p] = { key: null, detail: null };
   }
 
-  function fillCard(prefix, info) {
-    var img = $(prefix + 'NftImage');
-    var card = $(prefix + 'NftCard');
-    img.src = info.imageUrl;
-    img.alt = info.name;
-    img.classList.add('ready');
-    var sk = card.querySelector('.skeleton');
-    if (sk) sk.style.display = 'none';
-    $(prefix + 'NftName').textContent = info.name;
-    $(prefix + 'NftOwner').textContent = '@' + info.username;
+  function failSlot(p) {
+    var e = E(p);
+    slotFailed[p] = true;
+    e.slot.classList.add('failed');
+    e.fail.textContent = t('imgFail');
   }
 
-  function nameFromLink(link) {
-    var m = NFT_LINK_RE.exec(link);
-    return m ? m[1] + ' #' + m[2] : link;
-  }
+  function loadSlot(p, nft, username) {
+    var token = slotToken[p];
+    var e = E(p);
+    var retried = false;
 
-  function slugFromLink(link) {
-    var m = NFT_LINK_RE.exec(link);
-    return m ? m[1] + '-' + m[2] : null;
-  }
+    $(p + 'Name').textContent = nft.name + ' #' + nft.number;
+    $(p + 'User').textContent = '@' + username;
+    e.img.alt = nft.name + ' #' + nft.number;
 
-  /* ---------- Загрузка одного NFT ---------- */
-  // Успех зависит только от прежнего этапа (данные + статичное изображение).
-  // Анимация запрашивается СРАЗУ, параллельно с получением NFT, и не блокирует результат.
-  function loadOne(prefix, link, username) {
-    var token = cardToken[prefix];
-
-    var slug = slugFromLink(link);
-    if (slug) {
-      requestAnimation(slug).then(function (a) {
-        if (cardToken[prefix] !== token) return;
-        if (a.media) startAnimation(prefix, a.media, token);
-        else setNote(prefix, a.noteKey, '', a.detail);
+    e.img.onload = function () {
+      if (slotToken[p] !== token) return;
+      e.img.classList.add('ready');
+      e.sk.style.display = 'none';
+    };
+    e.img.onerror = function () {
+      if (slotToken[p] !== token) return;
+      if (retried) return failSlot(p);
+      retried = true;
+      // Сохранённый адрес мог устареть — один раз запрашиваем свежие данные существующим способом
+      requestNft(nft.link, '').then(function (r) {
+        if (slotToken[p] !== token) return;
+        if (r.imageUrl && r.imageUrl !== nft.image) e.img.src = r.imageUrl;
+        else failSlot(p);
+      }, function () {
+        if (slotToken[p] === token) failSlot(p);
       });
-    }
+    };
+    e.img.src = nft.image;
 
+    // Анимация — отдельный необязательный слой
+    animFor(nft.slug).then(function (a) {
+      if (slotToken[p] !== token) return;
+      if (a.media) startAnimation(p, a.media, token);
+      else setNote(p, a.noteKey, a.detail);
+    });
+  }
+
+  /* ---------- Предложение: тексты, таймер, отображение ---------- */
+  function nftLabel(n) { return n.name + ' #' + n.number; }
+
+  function offerSentence(o) {
+    return fmt(t('offerSentence'), { u1: o.user1.username, n1: nftLabel(o.nft1), n2: nftLabel(o.nft2) });
+  }
+
+  function remainingMs() {
+    return state.offer.expiresAt - (Date.now() + state.skew);
+  }
+
+  function formatHMS(ms) {
+    var s = Math.max(0, Math.ceil(ms / 1000));
+    return pad2(Math.floor(s / 3600)) + ':' + pad2(Math.floor((s % 3600) / 60)) + ':' + pad2(s % 60);
+  }
+
+  function renderOfferTexts() {
+    var o = state.offer;
+    if (!o) {
+      if (state.offerView === 'loading') {
+        el.offerStatus.textContent = t('statusLoading');
+        el.offerSentence.textContent = t('offerLoading');
+        el.offerTimerLabel.textContent = '';
+        el.offerTime.textContent = '';
+      }
+      return;
+    }
+    el.offerSentence.textContent = offerSentence(o);
+    updateTimer();
+  }
+
+  function updateTimer() {
+    var o = state.offer;
+    if (!o) return;
+    var rem = remainingMs();
+    var expired = rem <= 0;
+    el.offerCard.classList.toggle('expired', expired);
+    el.offerStatus.textContent = t(expired ? 'statusExpired' : 'statusActive');
+    if (expired) {
+      el.offerTimerLabel.textContent = t('offerExpired');
+      el.offerTime.textContent = '';
+    } else {
+      el.offerTimerLabel.textContent = t('offerActive');
+      el.offerTime.textContent = formatHMS(rem);
+    }
+    el.shareBtn.disabled = expired;
+  }
+
+  function startTimer() {
+    stopTimer();
+    updateTimer();
+    state.timerId = setInterval(updateTimer, 250);
+  }
+  function stopTimer() {
+    if (state.timerId) { clearInterval(state.timerId); state.timerId = null; }
+  }
+
+  function setOfferView(view) {
+    state.offerView = view;
+    var err = view === 'error';
+    el.offerWrap.style.display = err ? 'none' : '';
+    el.offerActions.style.display = err ? 'none' : '';
+    el.offerNotes.style.display = err ? 'none' : '';
+    el.offerError.classList.toggle('show', err);
+    if (view === 'loading') el.shareBtn.disabled = true;
+  }
+
+  // Показ готового предложения (после создания или открытия по ссылке)
+  function showOffer(offer, serverNow) {
+    state.offer = offer;
+    // Таймер считается по серверному времени создания, а не по моменту открытия страницы
+    state.skew = (serverNow || Date.now()) - Date.now();
+    offerErrorKey = null;
+    setOfferView('ready');
+
+    resetSlot('n1');
+    resetSlot('n2');
+    el.offerCard.classList.remove('expired');
+    renderOfferTexts();
+    refreshOfferNotes();
+    loadSlot('n1', offer.nft1, offer.user1.username);
+    loadSlot('n2', offer.nft2, offer.user2.username);
+
+    go('offer');
+    startTimer();
+    try {
+      history.replaceState(null, '', location.pathname + '?offer=' + encodeURIComponent(offer.id) + (location.hash || ''));
+    } catch (e) {}
+  }
+
+  function showOfferLoading() {
+    state.offer = null;
+    stopTimer();
+    offerErrorKey = null;
+    resetSlot('n1');
+    resetSlot('n2');
+    el.offerCard.classList.remove('expired');
+    el.offerNotes.textContent = '';
+    setOfferView('loading');
+    renderOfferTexts();
+    go('offer');
+  }
+
+  function showOfferError(e) {
+    state.offer = null;
+    stopTimer();
+    offerErrorKey = e && e.serverCode === 'OFFER_NOT_FOUND' ? 'errOfferNotFound'
+      : (e && (e.code === 'network' || e.code === 'timeout')) ? errKeyFor(e)
+      : 'errOfferLoad';
+    el.offerErrorText.textContent = t(offerErrorKey);
+    setOfferView('error');
+  }
+
+  function openOfferById(id) {
+    showOfferLoading();
+    apiJson(OFFERS_ENDPOINT + '/' + encodeURIComponent(id), { method: 'GET', headers: { 'Accept': 'application/json' } })
+      .then(function (j) { showOffer(j.offer, j.serverNow); }, showOfferError);
+  }
+
+  /* ---------- Подтверждение сделки ---------- */
+  function setBusy(v, key) {
+    state.busy = v;
+    state.busyKey = v ? key : null;
+    el.confirmBtn.disabled = v;
+    el.confirmBtn.classList.toggle('loading', v);
+    el.confirmBtnText.textContent = t(v ? key : 'confirm');
+  }
+
+  // Проверка NFT существующим способом: данные + настоящее изображение
+  function checkNft(link, username) {
     return requestNft(link, username).then(function (r) {
-      if (!r.imageUrl) return { ok: false, errKey: 'errNoImage' };
+      if (!r.imageUrl) return { ok: false, errKey: 'errNftNoImage' };
       return preloadImage(r.imageUrl).then(function () {
-        if (cardToken[prefix] !== token) return { ok: true };
-        fillCard(prefix, {
-          imageUrl: r.imageUrl,
-          name: nameFromLink(link),
-          username: username
-        });
         return { ok: true };
       }, function () {
         return { ok: false, errKey: 'errImageLoad' };
       });
     }, function (e) {
-      var map = { network: 'errNetwork', timeout: 'errTimeout', bad: 'errBadResponse', server: 'errServer' };
-      return { ok: false, errKey: map[e.code] || 'errServer', detail: e.code === 'server' ? e.message : null };
+      return { ok: false, errKey: errKeyFor(e) };
     });
   }
 
-  /* ---------- Основной обработчик ---------- */
-  function setBusy(v) {
-    busy = v;
-    el.loadBtn.disabled = v;
-    el.loadBtn.classList.toggle('loading', v);
-    el.loadBtnText.textContent = v ? t('loading') : t('load');
+  function handleCreateError(e) {
+    if (e && e.errors) {
+      if (e.errors.my) setFieldError('myNftLink', SERVER_CODE_KEY[e.errors.my.code] || 'errNftUnavailable');
+      if (e.errors.partner) setFieldError('partnerNftLink', SERVER_CODE_KEY[e.errors.partner.code] || 'errNftUnavailable');
+      showCreateStatus('error', 'errNftLoad');
+      return;
+    }
+    if (e && e.which && e.serverCode) {
+      var map = {
+        INVALID_USERNAME: e.which === 'my' ? 'myUsername' : 'partnerUsername',
+        INVALID_LINK: e.which === 'my' ? 'myNftLink' : 'partnerNftLink',
+        SAME_USER: 'partnerUsername',
+        SAME_NFT: 'partnerNftLink'
+      };
+      if (map[e.serverCode]) {
+        setFieldError(map[e.serverCode], SERVER_CODE_KEY[e.serverCode]);
+        showCreateStatus('error', 'fixFields');
+        return;
+      }
+    }
+    var key = e && e.serverCode ? (SERVER_CODE_KEY[e.serverCode] || 'errCreate') : errKeyFor(e);
+    showCreateStatus('error', key === 'errServer' ? 'errCreate' : key);
   }
 
-  function onLoadClick() {
-    if (busy) return;
-    clearAllFieldErrors();
-    hideStatus();
+  function onConfirm() {
+    if (state.busy) return;
+    clearFieldErrors();
+    hideCreateStatus();
 
-    var data = validateForm();
-    if (!data) {
-      showStatus('error', 'fixFields');
+    var d = validateCreateForm();
+    if (!d) {
+      showCreateStatus('error', 'fixFields');
       return;
     }
 
-    setBusy(true);
-    resetCard('my');
-    resetCard('partner');
-    el.results.classList.add('show');
-    showStatus('info', 'checking');
+    setBusy(true, 'confirming');
+    // Информация об анимациях запрашивается заранее, пока загружаются NFT
+    animFor(d.mySlug);
+    animFor(d.partnerSlug);
 
-    // Оба NFT (и их анимации) стартуют одновременно
     Promise.all([
-      loadOne('my', data.myLink, data.myUsername),
-      loadOne('partner', data.partnerLink, data.partnerUsername)
+      checkNft(d.myLink, d.myUsername),
+      checkNft(d.partnerLink, d.partnerUsername)
     ]).then(function (res) {
-      var okAll = true;
-      var firstDetail = null;
-      var firstKey = null;
-      ['my', 'partner'].forEach(function (p, i) {
-        var r = res[i];
-        if (!r.ok) {
-          okAll = false;
-          if (!firstKey) { firstKey = r.errKey; firstDetail = r.detail || null; }
-          failCard(p, r.errKey);
-          if (r.detail) $(p + 'NftFail').textContent = t('errServer') + ': ' + r.detail;
-        }
-      });
-
-      if (okAll) {
-        showStatus('success', 'success');
-      } else {
-        var sameKey = !res[0].ok && !res[1].ok && res[0].errKey === res[1].errKey;
-        if (sameKey) showStatus('error', firstKey, firstDetail);
-        else showStatus('error', 'errPartial');
+      var bad = false;
+      if (!res[0].ok) { setFieldError('myNftLink', res[0].errKey); bad = true; }
+      if (!res[1].ok) { setFieldError('partnerNftLink', res[1].errKey); bad = true; }
+      if (bad) {
+        // Если хотя бы один NFT не загрузился, сделка не создаётся
+        setBusy(false);
+        showCreateStatus('error', 'errNftLoad');
+        return;
       }
-    }).then(function () {
+      setBusy(true, 'creating');
+      return apiJson(OFFERS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          myUsername: d.myUsername,
+          myLink: d.myLink,
+          partnerUsername: d.partnerUsername,
+          partnerLink: d.partnerLink
+        })
+      }).then(function (j) {
+        setBusy(false);
+        showOffer(j.offer, j.serverNow);
+      }, function (e) {
+        setBusy(false);
+        handleCreateError(e);
+      });
+    }).catch(function () {
       setBusy(false);
-    }, function () {
-      setBusy(false);
-      showStatus('error', 'errNetwork');
+      showCreateStatus('error', 'errCreate');
     });
+  }
+
+  /* ---------- Поделиться ---------- */
+  function shareMessage(o) {
+    var until = new Date(o.expiresAt);
+    var time = until.toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+    return offerSentence(o) + '\n' + fmt(t('shareUntil'), { time: time });
+  }
+
+  function onShare() {
+    var o = state.offer;
+    if (!o || remainingMs() <= 0) return;
+    // Официальный способ: ссылка t.me/share/url открывает выбор чата в Telegram
+    var url = 'https://t.me/share/url?url=' + encodeURIComponent(o.shareUrl) +
+      '&text=' + encodeURIComponent(shareMessage(o));
+    if (tg && typeof tg.openTelegramLink === 'function') {
+      try { tg.openTelegramLink(url); return; } catch (e) {}
+    }
+    window.open(url, '_blank');
+  }
+
+  /* ---------- Открытие по ссылке ---------- */
+  function initialOfferId() {
+    var id = null;
+    try { id = new URLSearchParams(location.search).get('offer'); } catch (e) {}
+    if (!id && tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) id = tg.initDataUnsafe.start_param;
+    if (!id) {
+      try { id = new URLSearchParams((location.hash || '').replace(/^#/, '')).get('tgWebAppStartParam'); } catch (e) {}
+    }
+    return id && OFFER_ID_RE.test(id) ? id : null;
   }
 
   /* ---------- События ---------- */
   el.langRu.addEventListener('click', function () { setLang('ru'); });
   el.langEn.addEventListener('click', function () { setLang('en'); });
-  el.loadBtn.addEventListener('click', onLoadClick);
 
-  ['myUsername', 'myNftLink', 'partnerUsername', 'partnerNftLink'].forEach(function (id) {
-    el[id].addEventListener('input', function () {
+  el.createDealBtn.addEventListener('click', function () { go('create'); });
+  el.backBtn.addEventListener('click', function () {
+    if (state.screen === 'offer') clearOfferParam();
+    go('home');
+  });
+  el.offerErrorBtn.addEventListener('click', function () { clearOfferParam(); go('home'); });
+  el.confirmBtn.addEventListener('click', onConfirm);
+  el.shareBtn.addEventListener('click', onShare);
+  el.newDealBtn.addEventListener('click', function () {
+    FIELDS.forEach(function (id) { $(id).value = ''; });
+    clearFieldErrors();
+    hideCreateStatus();
+    clearOfferParam();
+    go('create');
+  });
+
+  FIELDS.forEach(function (id) {
+    $(id).addEventListener('input', function () {
       if (fieldErrKeys[id]) setFieldError(id, null);
     });
-    el[id].addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); onLoadClick(); }
+    $(id).addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); onConfirm(); }
     });
   });
 
+  // Пересчёт таймера при возврате в приложение
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && state.offer) updateTimer();
+  });
+  window.addEventListener('resize', setAppHeight);
+
   /* ---------- Telegram WebApp ---------- */
   try {
-    var tg = window.Telegram && window.Telegram.WebApp;
     if (tg) {
       tg.ready();
       tg.expand();
-      if (tg.setHeaderColor) tg.setHeaderColor('#0b0d12');
-      if (tg.setBackgroundColor) tg.setBackgroundColor('#0b0d12');
+      if (tg.setHeaderColor) tg.setHeaderColor('#0a0c10');
+      if (tg.setBackgroundColor) tg.setBackgroundColor('#0a0c10');
+      if (tg.onEvent) tg.onEvent('viewportChanged', setAppHeight);
     }
   } catch (e) {}
 
+  setAppHeight();
   applyLang();
 
-  // Библиотеку lottie-web подгружаем заранее, пока пользователь вводит данные
+  var startId = initialOfferId();
+  if (startId) openOfferById(startId);
+  else go('home');
+
+  // Библиотеку lottie-web подгружаем заранее
   setTimeout(function () { loadLottieLib().catch(function () {}); }, 300);
 })();

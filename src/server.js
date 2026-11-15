@@ -6,47 +6,54 @@ const { Readable, Transform, pipeline } = require('stream');
 const express = require('express');
 const { getNft, NftError } = require('./nft');
 const { getNftAnimation, openAnimationFile, MAX_MEDIA_BYTES } = require('./animation');
+const offers = require('./offers');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.disable('x-powered-by');
+// За прокси Render: корректные req.ip и req.protocol (нужны для лимитов и ссылок на предложения)
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '10kb' }));
 
-/* ---------- Простой лимит запросов (на IP, в памяти) ---------- */
+/* ---------- Лимиты запросов (на IP, в памяти) ---------- */
 const RATE_WINDOW_MS = 60 * 1000;
-const RATE_MAX = 120; // на одну загрузку пары NFT уходит до 6 запросов
-const hits = new Map();
 
-function rateLimit(req, res, next) {
-  const now = Date.now();
-  const ip = req.ip || 'unknown';
-  let rec = hits.get(ip);
-  if (!rec || now - rec.start > RATE_WINDOW_MS) {
-    rec = { start: now, count: 0 };
-    hits.set(ip, rec);
-  }
-  rec.count++;
-  if (rec.count > RATE_MAX) {
-    return res.status(429).json({
-      ok: false,
-      code: 'RATE_LIMITED',
-      error: 'Слишком много запросов, подождите минуту / Too many requests, wait a minute'
-    });
-  }
-  next();
+function makeRateLimit(max) {
+  const hits = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, rec] of hits) {
+      if (now - rec.start > RATE_WINDOW_MS) hits.delete(ip);
+    }
+  }, RATE_WINDOW_MS).unref();
+
+  return function rateLimit(req, res, next) {
+    const now = Date.now();
+    const ip = req.ip || 'unknown';
+    let rec = hits.get(ip);
+    if (!rec || now - rec.start > RATE_WINDOW_MS) {
+      rec = { start: now, count: 0 };
+      hits.set(ip, rec);
+    }
+    rec.count++;
+    if (rec.count > max) {
+      return res.status(429).json({
+        ok: false,
+        code: 'RATE_LIMITED',
+        error: 'Слишком много запросов, подождите минуту / Too many requests, wait a minute'
+      });
+    }
+    next();
+  };
 }
 
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, rec] of hits) {
-    if (now - rec.start > RATE_WINDOW_MS) hits.delete(ip);
-  }
-}, RATE_WINDOW_MS).unref();
+const rateLimit = makeRateLimit(120);       // общий лимит (на одну загрузку пары NFT уходит до 6 запросов)
+const createOfferLimit = makeRateLimit(20); // создание предложений
 
 function sendError(res, e) {
   if (e instanceof NftError) {
-    return res.status(e.status).json({ ok: false, code: e.code, error: e.message });
+    return res.status(e.status).json(Object.assign({ ok: false, code: e.code, error: e.message }, e.extra || {}));
   }
   console.error('Unexpected error:', e);
   return res.status(500).json({
@@ -152,8 +159,33 @@ async function mediaHandler(req, res) {
   }
 }
 
+/* ---------- Предложения обмена ---------- */
+async function offerCreateHandler(req, res) {
+  try {
+    const offer = await offers.createOffer(req.body, req);
+    res.set('Cache-Control', 'no-store');
+    res.status(201).json({ ok: true, serverNow: Date.now(), offer: offer });
+  } catch (e) {
+    sendError(res, e);
+  }
+}
+
+async function offerGetHandler(req, res) {
+  try {
+    const offer = await offers.getOffer(req.params.id, req);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, serverNow: Date.now(), offer: offer });
+  } catch (e) {
+    sendError(res, e);
+  }
+}
+
 /* ---------- API ---------- */
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/health', async (req, res) => {
+  let storage = null;
+  try { storage = await offers.storageKind(); } catch (e) {}
+  res.json({ ok: true, storage: storage });
+});
 
 app.get('/api/nft', rateLimit, nftHandler);
 app.post('/api/nft', rateLimit, nftHandler);
@@ -164,6 +196,9 @@ app.post('/api/validate-nft', rateLimit, nftHandler);
 
 app.get('/api/nft-animation', rateLimit, animationHandler);
 app.get('/api/nft-media', rateLimit, mediaHandler);
+
+app.post('/api/offers', rateLimit, createOfferLimit, offerCreateHandler);
+app.get('/api/offers/:id', rateLimit, offerGetHandler);
 
 app.use('/api', (req, res) => {
   res.status(404).json({ ok: false, code: 'NOT_FOUND', error: 'Endpoint не найден / Endpoint not found' });
@@ -180,6 +215,9 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', error: 'Внутренняя ошибка сервера / Internal server error' });
 });
+
+// Хранилище предложений инициализируем сразу, чтобы увидеть проблемы в логах при старте
+offers.init().catch((e) => console.error('Offers init failed:', e));
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('One Tap Trade server listening on port ' + PORT);
